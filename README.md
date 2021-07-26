@@ -42,7 +42,7 @@ Note that the goal is to make the binares compile so the binary is *byte identic
 
 Hope you can learn something from this disassembly and it inspires a project.  
 
-![alt text](https://github.com/ajgbarnes/repton/blob/main/repton-sprites.png "Repton Sprites")
+![alt text](https://github.com/ajgbarnes/bbc-micro-repton/blob/main/repton-sprites.png "Repton Sprites")
 
 
 Andy Barnes
