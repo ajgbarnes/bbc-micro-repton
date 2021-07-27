@@ -1,5 +1,3 @@
-
-
 org &0A00
 
 ; Zeropage
@@ -166,7 +164,7 @@ INCLUDE "repton-third-chord-note.asm"
 ;L0D76
 .fn_reset_palette_music_and_vsync
         ; Reset 
-        JSR     fn_indirect_disable_vsync_event_and_change_palette
+        JSR     fn_dissolve_screen
 
         LDA     #$FF
         STA     var_note_sequence_number
@@ -421,7 +419,6 @@ INCLUDE "repton-third-chord-note.asm"
 .text_press_space
         EQUS    $81,"Press",$82," SPACE ",$81," to play game",$0D,$0D
 
-;...
 .L0FB4
 .fn_wait_for_vertical_sync
         ; Preserve the processor flags
@@ -460,6 +457,38 @@ INCLUDE "repton-third-chord-note.asm"
         PLP
         RTS
 
+;...
+
+;1044
+.fn_generate_random_number
+        ; Generate a random number
+        ; On exit
+        ;       $0902 contains random number
+        ;           A contains random number
+        ;
+        ; T1H = T1 High Order Counter
+        ; T1L = T1 Low  Order Counter
+        ; S   = Starting value in $0902
+        ; R   =  Random value result
+        ;
+        ; R = ((S + T1H) EOR T1C) + 2 * ((S + T1H) EOR T1C)
+        ;
+        ; In BASIC (Note S starting value can be anything)
+        ;
+        ; 10 S = 20
+        ; 20 T1H = ?&FE65
+        ; 30 T1C = ?&FE64
+        ; 40 R = ((S + T1H) EOR T1C) + 2 * ((S + T1H) EOR T1C)
+        ; 50 PRINT ~R
+        ;
+        LDA     L0902
+        ADC     LFE65
+        EOR     LFE64
+        STA     L0902
+        ROL     A
+        ADC     L0902
+        STA     L0902
+        RTS
 ;...
 
 ; 107A
@@ -613,6 +642,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$8F
         JSR     fn_read_key
 
+        ; If it wasn't pressed branch ahead
         BEQ     end_check_for_map_key_press
 
         ; OSWRCH &0C / VDU 12 - clear text area
@@ -1082,10 +1112,20 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Reset the palette, music sequence and vsync
         JMP     fn_reset_palette_music_and_vsync
-;...
+
+        ; Junk Bytes - 2 
+        NOP 
+        NOP
+
+;L17AF
+.fn_update_high_score_reset_music
+        JSR     fn_check_and_update_high_score
+
+        JMP     fn_reset_palette_music_and_vsync
+
 ;17B5
 .fn_display_repton_start_screen
-        JSR     L17AF
+        JSR     fn_update_high_score_reset_music
 
         ; Set the colour mask to show black and
         ; red only 
@@ -1516,11 +1556,12 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$9D
         JSR     fn_read_key
 
-        ; If pressed go to the end
+        ; If pressed go to the end if space was pressed
         BNE     L195A
 
-        ; Space pressed
-        JSR     L10DC
+        ; Check to see if the escape key was pressed
+        ; and 
+        JSR     fn_check_escape_key
 
         JMP     write_sound_status_to_screen
 
@@ -1965,7 +2006,80 @@ INCLUDE "repton-third-chord-note.asm"
         BNE     L1AA6
 
         RTS        
+;...
 
+.L1B4B
+        LDA     #$15
+        RTS
+
+.1B4E
+        STX     zp_tile_x_pos_cache
+        STY     zp_tile_y_pos_cache
+        TXA
+        BMI     L1B4B
+
+        TYA
+        BMI     L1B4B
+
+        LSR     A
+        LSR     A
+        STA     L0009
+        TXA
+        LSR     A
+        LSR     A
+        STA     L0008
+        LDA     #$00
+        STA     zp_string_to_display_msb
+        LDA     L0009
+        ASL     A
+        ASL     A
+        ASL     A
+        ASL     A
+        ROL     zp_string_to_display_msb
+        ASL     A
+        ROL     zp_string_to_display_msb
+        CLC
+        ADC     L0008
+        STA     zp_string_to_display_lsb
+        LDA     zp_string_to_display_msb
+        CLC
+        ADC     #$04
+        STA     zp_string_to_display_msb
+        TYA
+        AND     #$03
+        STA     L0009
+        TXA
+        AND     #$03
+        STA     L0008
+        LDY     #$00
+        LDA     (zp_string_to_display_lsb),Y
+        TAY
+        LDX     #$00
+        STX     zp_string_to_display_msb
+        TYA
+        ASL     A
+        ASL     A
+        ASL     A
+        ASL     A
+        ROL     zp_string_to_display_msb
+        STA     zp_string_to_display_lsb
+        LDA     L0009
+        ASL     A
+        ASL     A
+        CLC
+        ADC     zp_string_to_display_lsb
+        ADC     L0008
+        STA     zp_string_to_display_lsb
+        LDA     zp_string_to_display_msb
+        ORA     #$40
+        STA     zp_string_to_display_msb
+        LDX     zp_tile_x_pos_cache
+        LDY     #$00
+        LDA     (zp_string_to_display_lsb),Y
+        PHA
+        LDY     zp_tile_y_pos_cache
+        PLA
+        RTS
 ;...
 .L1BB4
         ; TODO Never executed as this is never called?
@@ -2300,10 +2414,102 @@ INCLUDE "repton-third-chord-note.asm"
         JSR     L1E75
 ;...
 ;L1F82
-.fn_indirect_disable_vsync_event_and_change_palette
+.fn_dissolve_screen
         ; Disable Vsync event and change the palette
         NOP
         JSR     fn_disable_vsync_event_and_change_palette
+
+        ; This loop is used to iterate over the entire screen
+        ; N times as defined by the value in 
+;L1F86
+.loop_dissolve_entire_screen
+        ; Generates a random value using the User VIA
+        ; Timer 1
+        ; Reset the screen lookup password
+        ; Set the screen start address to 
+        LDA     #$00
+        STA     zp_screen_write_address_lsb
+        LDA     #$60
+        STA     zp_screen_write_address_msb
+.L1F8E
+        ; Get a random number
+        JSR     fn_generate_random_number
+
+        ; Use the random number to generate an MSB
+        ; address of either $E0 and $F0
+        ; Keep the top 4 bits (masking with 1111 0000)
+        AND     #$F0
+
+        ; Set the top 3 bits always (so randomness is)
+        ; is just with the 5th bit and result will be 
+        ; 1111 0000 or 1110 0000
+        ORA     #$E0
+
+        ; Store the MSB which will be used as the source
+        ; of some random byte
+        STA     var_random_byte_source_msb
+
+        ; Generate another random number for the LSB
+        ; address which will be either $E0xx or 
+        JSR     fn_generate_random_number
+
+        STA     var_random_byte_source_lsb
+        LDY     #$00
+;L1F9E
+.loop_dissolve_screen_byte
+        ; Load the current byte on the screen
+        LDA     (zp_screen_write_address_lsb),Y
+
+        ; AND the current screen byte with a random byte
+        ; between $E000 and $F0FF
+        AND     (var_random_byte_source_lsb),Y
+
+        ; Write it back to the screen
+        STA     (zp_screen_write_address_lsb),Y
+
+        ; Move to the next screen byte
+        INY
+        
+        ; Keep going until this page of memory is processed
+        BNE     loop_dissolve_screen_byte
+
+        ; Move to the next page of memory
+        INC     zp_screen_write_address_msb
+        BPL     loop_dissolve_screen_byte
+
+        ; Loop over the whole screen N times
+        DEC     zp_screen_dissolve_iterations
+        BNE     loop_dissolve_entire_screen
+
+
+
+        ; OSWRCH &11 / VDU 17
+        ; Define text colour
+        LDA     #$11
+        JSR     OSWRCH
+
+        LDA     #$80
+        JSR     OSWRCH
+
+        LDA     #$0C
+        JSR     OSWRCH
+
+        ; Reset the screen start address to $6000
+        ; Reset cursor xpos and ypos to (0,0)
+        ; Set the LSB for the screen start address
+        LDA     #$00
+        STA     zp_screen_start_address_lsb
+        STA     zp_password_cursor_xpos
+        STA     zp_password_cursor_ypos
+
+        ; Set the colour mask to all colours
+        LDA     #$FF
+        STA     zp_screen_colour_mask
+
+        ; Set the MSB for the screen start address
+        LDA     #$60
+        STA     zp_screen_start_address_msb
+        RTS
 
 
 ;1FCF
@@ -2326,16 +2532,16 @@ INCLUDE "repton-third-chord-note.asm"
         STA     var_high_score_lsb
         STA     var_high_score_msb
 
-;1FED
-.fn_initiliase_game_after_restart
         JSR     L264D
 
         ; Set sound, music and combined sound/music
         ; to on
         LDA     #$01
         JSR     fn_set_sound_and_music_status
-
-        JSR     L2190
+        
+;1FED
+.fn_initiliase_game_after_restart
+        JSR     fn_clear_screen_show_high_score_table
 
         ; Reset the stack pointer 
         LDX     #$FF
@@ -2356,8 +2562,11 @@ INCLUDE "repton-third-chord-note.asm"
         STA     var_score_msb
         JSR     L1EBF
 
+        ; Set repton's animation state to 'Repton Standing'
         LDA     #$0A
-        STA     L0905
+        STA     var_repton_animation_state
+
+        ; TODO
         LDA     #$00
         STA     L0907
         STA     L0906
@@ -2388,6 +2597,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$11
         JSR     fn_define_logical_colour
 
+; 2034
         ; Display the repton start/pause screen
         JSR     fn_display_repton_start_screen
 
@@ -2416,7 +2626,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDY     L0013
         JSR     L1B4E
 
-        JSR     L1BFB
+        JSR     fn_display_mini_map
 
         INC     L0012
         DEC     L000E
@@ -2566,7 +2776,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$11
         STA     zp_screen_write_address_lsb
         LDY     #$01
-        LDA     #$01
+        LDA     #$01` 
         JSR     L105A
 ;...
 
@@ -3101,7 +3311,7 @@ INCLUDE "repton-third-chord-note.asm"
 ;2598
 .fn_disable_vsync_create_map_colours
         ; Disable Vsync event and change the palette
-        JSR     fn_indirect_disable_vsync_event_and_change_palette
+        JSR     fn_dissolve_screen
 
         ; Change the colour of the palette to default
         ; with cyan for white
@@ -3204,7 +3414,7 @@ INCLUDE "repton-third-chord-note.asm"
 .L2625
         JSR     L2653
 
-        JMP     fn_indirect_disable_vsync_event_and_change_palette
+        JMP     fn_dissolve_screen
 
 .L262B
 .end_something
@@ -3271,12 +3481,11 @@ INCLUDE "repton-third-chord-note.asm"
         ; Disable the vsync event subscription
         JSR     fn_disable_vsync_event
 
-        
         ; Check if this is a restart or the player
         ; died - if restart, don't show the 
         ; high score screen
         LDA     var_restart_pressed
-        BNE     L2695
+        BNE     end_show_high_score_table
 
         JSR     fn_sort_and_display_scores
 
@@ -3284,7 +3493,8 @@ INCLUDE "repton-third-chord-note.asm"
 
         JSR     fn_loop_wait_for_space_bar_on_screen
 
-.L2695
+;2695
+.end_show_high_score_table
         ; Rest the "hide high score screen" flag
         LDA     #$00
         STA     var_restart_pressed
@@ -3497,7 +3707,7 @@ INCLUDE "repton-third-chord-note.asm"
         CMP     var_high_score_lsb
         BCC     end_check_and_update_high_score
 
-        ; Junk bytes
+        ; Junk bytes - 2
         NOP
         NOP
 ;2AE0
@@ -3575,9 +3785,6 @@ INCLUDE "repton-third-chord-note.asm"
         EQUB    $0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D
         EQUB    $0D,$0D,$0D,$0D,$0D
 
-
-
-;...
 ;2C00
 .fn_loop_wait_for_space_bar_on_screen
         ; Check to see if the Restart, Music Off
