@@ -481,13 +481,15 @@ INCLUDE "repton-third-chord-note.asm"
         ; 40 R = ((S + T1H) EOR T1C) + 2 * ((S + T1H) EOR T1C)
         ; 50 PRINT ~R
         ;
-        LDA     L0902
-        ADC     LFE65
-        EOR     LFE64
-        STA     L0902
+        LDA     var_random_value
+        ADC     SHEILA_USER_VIA_R5_T1C_H
+        EOR     SHEILA_USER_VIA_R5_T1C_L
+        STA     var_random_value
         ROL     A
-        ADC     L0902
-        STA     L0902
+        ADC     var_random_value
+        STA     var_random_value
+        ; Note that $0902 is never read outside
+        ; this sub-routine
         RTS
 ;...
 
@@ -2481,16 +2483,18 @@ INCLUDE "repton-third-chord-note.asm"
         DEC     zp_screen_dissolve_iterations
         BNE     loop_dissolve_entire_screen
 
-
-
         ; OSWRCH &11 / VDU 17
-        ; Define text colour
+        ; Set the background colour to black (128/$80)
+        ; VDU 17, 128
         LDA     #$11
         JSR     OSWRCH
 
+        ; Black background
         LDA     #$80
         JSR     OSWRCH
 
+        ; OSWRCH &0C
+        ; Clear the screen
         LDA     #$0C
         JSR     OSWRCH
 
