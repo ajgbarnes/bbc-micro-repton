@@ -421,6 +421,8 @@ INCLUDE "repton-third-chord-note.asm"
 
 .L0FB4
 .fn_wait_for_vertical_sync
+        ; Waits for 20ms
+        ;
         ; Preserve the processor flags
         PHP
         ; Clear maskable interrupts
@@ -1067,7 +1069,141 @@ INCLUDE "repton-third-chord-note.asm"
         JMP     move_to_next_x_pos
 ;...
 
+;L16E2
+.fn_wait_120ms
 
+        ; Wait 6 * 20 ms = 120 ms
+        LDX     #$06
+        
+        ; Loop around 6 times waiting
+        ; for vertical sync (up to 120ms)
+;L16E4
+.loop_wait_for_vsync_fn
+        ; Wait up to 20ms
+        JSR     fn_wait_for_vertical_sync
+
+        ; If still need to wait then loop back
+        DEX
+        BNE     loop_wait_for_vsync_fn
+
+        RTS
+;...
+
+.L1708
+        ; Switch off Binary Coded Decimal mode
+        CLD
+
+        LDA     #$10
+        STA     zp_screen_write_address_lsb
+
+        LDA     #$F1
+        LDX     #$06
+        LDY     #$02
+        JSR     L0DB4
+
+        ; Display the explosion on the screen
+        ; for 120 ms
+        JSR     fn_wait_120ms
+
+        ; Display a small explosion on the screen
+        LDA     #$0F
+        STA     var_repton_animation_state
+        JSR     fn_lookup_repton_sprite_and_display
+
+        ; Display the explosion on the screen
+        ; for 120 ms
+        JSR     fn_wait_120ms
+
+        ; Display a medium explosion on the screen
+        LDA     #$0E
+        STA     var_repton_animation_state
+        JSR     fn_lookup_repton_sprite_and_display
+
+        ; Display the explosion on the screen
+        ; for 120 ms
+        JSR     fn_wait_120ms
+
+        ; Display a big explosion on the screen
+        LDA     #$0D
+        STA     var_repton_animation_state
+        JSR     fn_lookup_repton_sprite_and_display
+
+        ; Display the explosion on the screen
+        ; for 120 ms
+        JSR     fn_wait_120ms
+
+        ; Display a medium explosion on the screen
+        LDA     #$0E
+        STA     var_repton_animation_state
+        JSR     fn_lookup_repton_sprite_and_display
+
+        ; Display the explosion on the screen
+        ; for 120 ms
+        JSR     fn_wait_120ms
+
+        ; Display a small explosion on the screen
+        LDA     #$0F
+        STA     var_repton_animation_state
+        JSR     fn_lookup_repton_sprite_and_display
+
+        ; Display the explosion on the screen
+        ; for 120 ms
+        JSR     fn_wait_120ms
+
+        LDA     L008C
+        CLC
+        ADC     #$0E
+        TAX
+        LDA     L008D
+
+        CLC
+        ADC     #$0E
+        TAY
+        LDA     #$00
+        JSR     L1A1C
+
+        ; Display the blank screen for 4 * 120ms
+        ; Just under half a second  (480ms)
+        JSR     fn_wait_120ms
+        JSR     fn_wait_120ms
+        JSR     fn_wait_120ms
+        JSR     fn_wait_120ms
+
+        ; Reset the stack pointer
+        LDX     #$FF
+        TXS
+
+        LDA     #$1F
+        JSR     L121E
+
+        LDY     #$02
+        JSR     L105A
+
+        NOP
+        JSR     L16E2
+
+        LDA     #$0F
+        ; Reduce the number of lives the player
+        ; has by one
+        DEC     var_lives_left
+
+        ; If the player has run out of lives
+        ; (value is negative) then reset the
+        ; game
+        BMI     L1788
+
+        ; Reset the game
+        JMP     fn_reset_and_show_start_screen
+
+;L1788
+.player_out_of_lives
+        ; Player has exhausted all my lives
+        ; Did they achieve a high score?
+        JSR     fn_check_and_update_high_score
+
+        JMP     L0FC7
+
+;...
         LDX     #$1E
 .L1790
         JSR     fn_wait_for_vertical_sync
@@ -2566,6 +2702,8 @@ INCLUDE "repton-third-chord-note.asm"
         STA     var_score_msb
         JSR     L1EBF
 
+;L2008
+.fn_reset_and_show_start_screen
         ; Set repton's animation state to 'Repton Standing'
         LDA     #$0A
         STA     var_repton_animation_state
