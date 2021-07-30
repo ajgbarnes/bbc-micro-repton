@@ -696,15 +696,15 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$00
         STA     L0076
         STA     L0077
-        LDA     L008C
+        LDA     zp_repton_xpos
         STA     L007C
 .L110F
-        LDA     L008D
+        LDA     zp_repton_ypos
 .L1111
         STA     L007D
         LDA     #$00
-        STA     L008C
-        STA     L008D
+        STA     zp_repton_xpos
+        STA     zp_repton_ypos
 .L1119
         LDX     L0076
         LDY     L0077
@@ -733,9 +733,9 @@ INCLUDE "repton-third-chord-note.asm"
         NOP
         NOP
         LDA     L007C
-        STA     L008C
+        STA     zp_repton_xpos
         LDA     L007D
-        STA     L008D
+        STA     zp_repton_ypos
         PLA
         PLA
         JMP     L17B5
@@ -1150,11 +1150,11 @@ INCLUDE "repton-third-chord-note.asm"
         ; for 120 ms
         JSR     fn_wait_120ms
 
-        LDA     L008C
+        LDA     zp_repton_xpos
         CLC
         ADC     #$0E
         TAX
-        LDA     L008D
+        LDA     zp_repton_ypos
 
         CLC
         ADC     #$0E
@@ -1706,10 +1706,9 @@ INCLUDE "repton-third-chord-note.asm"
 .L195A
         JMP     L2625
 
-;...
 ;L195D
 .fn_add_to_score 
-        ; Add whateve is in A to the score
+        ; Add whatever is in A to the score
         ; 
         ; Put the processor into Binary Coded Decimal (BCD)
         ; mode - this means each nibble in a byte counts 0-9 
@@ -1986,7 +1985,7 @@ INCLUDE "repton-third-chord-note.asm"
         SEC
         ; $14 - $06
         ; A=$0E
-        SBC     L008C
+        SBC     zp_repton_xpos
 
         CLC
         ADC     #$04
@@ -1996,7 +1995,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Y=$04 - $F6 + $04 = $0E
         TYA
         SEC
-        SBC     L008D
+        SBC     zp_repton_ypos
         CLC
         ADC     #$04
         TAY
@@ -2146,77 +2145,217 @@ INCLUDE "repton-third-chord-note.asm"
         RTS        
 ;...
 
-.L1B4B
+;L1B4B
+.use_default_off_screen_tile
+        ; Default tile to use for off 
+        ; game screen areas ($15/20)
         LDA     #$15
         RTS
 
-.1B4E
+;1B4E
+.fn_lookup_screen_tile_for_xpos_ypos
+        ; Current screen map is cached 
+        ; between $0400 - $07FF
+        ;
+        ; Each map is 32 Reptons wide and high
+        ; but repton is made up of 4 tiles in width
+        ; and 4 tiles in height
+        ;
+        ; So map is 32 * 4 = 128 tiles wide
+        ;       and 32 * 4 = 128 tiles high
+        ;
+        ; Anything wider is "off" game screen
+        ; so use a default tile 
+        ;
+        ; On entry:
+        ;       X - contains xpos (0-$FF)
+        ;       Y - contains ypos (0-$FF)
+        ; On exit:
+        ;       A - contains tile code
+        ;       X - contains xpos (0-$FF)
+        ;       Y - contains ypos (0-$FF)       
+
+        ; Cache the xpos and ypos as X and Y
+        ; get used for during processing
         STX     zp_tile_x_pos_cache
         STY     zp_tile_y_pos_cache
-        TXA
-        BMI     L1B4B
 
+        ; If X is > 126 use the 
+        ; default off-screen tile
+        TXA
+        BMI     use_default_off_screen_tile
+
+        ; If Y is > 126 use the 
+        ; default off-screen tile
         TYA
-        BMI     L1B4B
+        BMI     use_default_off_screen_tile
 
+        ; ------------------------------------
+        ; Calculation of map lookup address
+        ; 
+        ; Current map is stored as 32 x 32 = 1024 bytes
+        ; From $0400 to $07FF
+        ;
+        ; xpos and ypos are 0-$FF though so need dividing by
+        ; four as the "type" will be the same e.g. diamond
+        ; or rock or earch
+        ;
+        ; Position in table (pos) = ((ypos / 4) * 32) + (xpos / 4)
+        ; 
+        ; Lookup address = pos + 1024 (or pos + $0400)
+
+        ; Divide ypos by 4 because each tile/sprite 
+        ; is 4 tiles wide so it'll be the same for
+        ; each of those four e.g. diamond or rock
+        ; or earth
         LSR     A
         LSR     A
-        STA     L0009
+        STA     zp_general_ypos_lookup_calcs
+
+        ; Divide xpos by 4 because each tile/sprite 
+        ; is 4 tiles high so it'll be the same for
+        ; each of those four e.g. diamond or rock
+        ; or earth
         TXA
         LSR     A
         LSR     A
-        STA     L0008
+        STA     zp_general_xpos_lookup_calcs
+
+
         LDA     #$00
         STA     zp_string_to_display_msb
-        LDA     L0009
+
+
+        ; Each row is 32 characters wide so ypos
+        ; must be multipled by 32 to get to the right
+        ; row starting position
+        LDA     zp_general_ypos_lookup_calcs
         ASL     A
         ASL     A
         ASL     A
         ASL     A
+        ; Put any carry in to the MSB
         ROL     zp_string_to_display_msb
         ASL     A
         ROL     zp_string_to_display_msb
+
+        ; Add on the (xpos / 4) calculated earlier
+        ; so it's at the right offset in the table
         CLC
-        ADC     L0008
+        ADC     zp_general_xpos_lookup_calcs
+
+        ; Store the table position         
         STA     zp_string_to_display_lsb
         LDA     zp_string_to_display_msb
+        
+        ; Add $0400 as the table is stored at $0400-$04FF
+        ; Tile can be retrieved from this address held in 
+        ; LSB / MSB
         CLC
         ADC     #$04
         STA     zp_string_to_display_msb
+        ; End's map loookup table calculation
+        ; ------------------------------------
+
+        ; ------------------------------------
+        ; Second calculation and lookup - for the
+        ; current sprite, at the (xpos,ypos) what is 
+        ; the tile part that should be shown
+        ; 
+        ; At this point, we can look up (sprite code) if it's a
+        ; rock or diamond but also need to know which
+        ; part as each sprite is 4x4 - this is done
+        ; by ANDing with $03 to derrive a 0-3 value
+        ; for the current sprite in both the x axis 
+        ; and y axis. 
+        ;
+        ; Each sprite is stored at $4000 and is 
+        ; a 4x4 of tiles as below:
+        ;     0   1   2   3
+        ;    --------------
+        ; 0 | A   B   C   D
+        ; 1 | E   F   G   H
+        ; 2 | I   J   K   L
+        ; 3 | M   N   O   P
+
+        ; This is stored sequentially as the following
+        ; in memory 
+        ; A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,A1,B1....P1,A2...
+        ;        
+        ; Keep the bottom two bits only
+        ; of the ypos - shows which part
+        ; of the sprite needs to be displayed 
+        ; vertically - (y part)
         TYA
         AND     #$03
-        STA     L0009
+        STA     zp_general_ypos_lookup_calcs
+
+        ; Keep the bottom two bits only
+        ; of the xpos - shows which part
+        ; of the sprite needs to be displayed 
+        ; horizontally (x part)
         TXA
         AND     #$03
-        STA     L0008
+        STA     zp_general_xpos_lookup_calcs
+
+        ; Lookup the sprite at this (xpos,ypos)
         LDY     #$00
         LDA     (zp_string_to_display_lsb),Y
+
+        ; Move the sprite to Y
         TAY
+
+        ; Rest the MSB as another calculation is being performed
+        ; 
         LDX     #$00
         STX     zp_string_to_display_msb
+
+        ; Get the sprite 
         TYA
+
+        ; Location of sprite = (sprint code * 16) + (y part * 4) + (x part) + $4000
+
+        ; Multiply the sprite typeby 16 (as each sprite is 16 bytes)
+        ; to get to the right one
         ASL     A
         ASL     A
         ASL     A
         ASL     A
         ROL     zp_string_to_display_msb
         STA     zp_string_to_display_lsb
-        LDA     L0009
+
+        ; Multiply the y part by 4 to get to the nth row of the sprite
+        LDA     zp_general_ypos_lookup_calcs
         ASL     A
         ASL     A
+
+        ; Add on the xpart to get to the right column
         CLC
         ADC     zp_string_to_display_lsb
         ADC     L0008
         STA     zp_string_to_display_lsb
         LDA     zp_string_to_display_msb
+
+        ; Add $4000 which is the starting point for the sprites
         ORA     #$40
         STA     zp_string_to_display_msb
+        ; ------------------------------------
+
+        ; Reloaad the xpos
         LDX     zp_tile_x_pos_cache
+
+        ; Reset Y and load the sprite part tile
         LDY     #$00
         LDA     (zp_string_to_display_lsb),Y
+
+        ; PHA/PLA seem redundant?
         PHA
+        ; Reload the ypos
         LDY     zp_tile_y_pos_cache
         PLA
+
+        ; A contains the sprite tile part for the
+        ; current (xpos,ypos)
         RTS
 ;...
 .L1BB4
@@ -2297,7 +2436,7 @@ INCLUDE "repton-third-chord-note.asm"
         RTS
 
 ;L1BEC
-.end_display_mini_map
+.end_display_tile
         ; Reload the current tile from the stack
         ; Actually just clears the value from the stack
         PLA
@@ -2312,14 +2451,14 @@ INCLUDE "repton-third-chord-note.asm"
         JMP     fn_display_mini_map
 
 ;L1BFB
-.fn_display_mini_map
+.fn_display_tile
         ; Preserve A - on entry it contains the 
         ; tile to write to the screen
         ; TODO WHY SUBTRACT 8C / 8D
         PHA
         TXA
         SEC
-        SBC     L008C
+        SBC     zp_repton_xpos
         TAX
         ; If the xpos is beyond the end of the row
         ; then don't do anything
@@ -2328,7 +2467,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         TYA
         SEC
-        SBC     L008D
+        SBC     zp_repton_ypos
         TAY
         ; If the ypos is beyond the end of the row
         ; then don't do anything        
@@ -2550,6 +2689,22 @@ INCLUDE "repton-third-chord-note.asm"
         LDY     L0078
         ; 3175
         JSR     L1E75
+
+        ; 79 and 7A are set to the map cahce area
+        ; for the current screen
+        LDY     #$00
+        STA     (L0079),Y
+
+        ;
+        CMP     #$1E
+        BNE     L1EE5
+
+        INC     var_number_diamonds_left
+.L1EE5
+        CMP     #$17
+        BNE     L1EEC
+
+        INC     var_number_diamonds_left        
 ;...
 ;L1F82
 .fn_dissolve_screen
@@ -2679,8 +2834,16 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$01
         JSR     fn_set_sound_and_music_status
         
+        ; continues below
+        
 ;1FED
 .fn_initiliase_game_after_restart
+        ; This is called on load of the game and
+        ; also if a player loses ALL of their lives
+
+        ; Clear the screen and if the player
+        ; just lost all their lives then show the
+        ; high score table
         JSR     fn_clear_screen_show_high_score_table
 
         ; Reset the stack pointer 
@@ -2704,6 +2867,16 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;L2008
 .fn_reset_and_show_start_screen
+        ; This is called when a player loses
+        ; a life but still has some left AND
+        ; it is called onve a level has been
+        ; completed
+        ;
+        ; It is NOT called when a player
+        ; this return to return to status
+        ; screen (lives, diamonds left etc)
+
+
         ; Set repton's animation state to 'Repton Standing'
         LDA     #$0A
         STA     var_repton_animation_state
@@ -2719,10 +2892,12 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$00
         STA     var_remaining_time_lsb
 
+        ; For a new game (restart) Repton's start 
+        ; position is (2,2) on the map
         LDA     #$02
-        STA     L008C
+        STA     zp_repton_xpos
         LDA     #$02
-        STA     L008D
+        STA     zp_repton_ypos
 
         ; Start screen address is $6000 before scrolling
         LDA     #$00
@@ -2755,20 +2930,22 @@ INCLUDE "repton-third-chord-note.asm"
         ; what the value is
         LDA     #$20
         STA     zp_print_zero_or_not_flag
-        LDA     L008D
+
+        LDA     zp_repton_ypos
         STA     L0013
 .L204A
         LDA     #$20
         STA     zp_screen_start_address_lsb
         
-        LDA     L008C
+        LDA     zp_repton_xpos
         STA     L0012
 .L2052
         LDX     L0012
         LDY     L0013
-        JSR     L1B4E
+        ; Lookup tile
+        JSR     fn_lookup_screen_tile_for_xpos_ypos
 
-        JSR     fn_display_mini_map
+        JSR     fn_display_tile
 
         INC     L0012
         DEC     L000E
