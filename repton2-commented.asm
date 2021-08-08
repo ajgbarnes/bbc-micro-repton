@@ -577,7 +577,7 @@ INCLUDE "repton-third-chord-note.asm"
         ;    X contains the cursor x position 
         ;    Y contains the cursor y position 
         ;
-        ; Screen can be 32 x 32 tiles / characters
+        ; Screen can be 32 x 32 objects
         ;
         ; On exit:
         ;    X contains the LSB for the screen address
@@ -696,15 +696,15 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$00
         STA     L0076
         STA     L0077
-        LDA     zp_repton_xpos
+        LDA     zp_visible_screen_top_left_xpos
         STA     L007C
 .L110F
-        LDA     zp_repton_ypos
+        LDA     zp_visible_screen_top_left_ypos
 .L1111
         STA     L007D
         LDA     #$00
-        STA     zp_repton_xpos
-        STA     zp_repton_ypos
+        STA     zp_visible_screen_top_left_xpos
+        STA     zp_visible_screen_top_left_ypos
 .L1119
         LDX     L0076
         LDY     L0077
@@ -733,9 +733,9 @@ INCLUDE "repton-third-chord-note.asm"
         NOP
         NOP
         LDA     L007C
-        STA     zp_repton_xpos
+        STA     zp_visible_screen_top_left_xpos
         LDA     L007D
-        STA     zp_repton_ypos
+        STA     zp_visible_screen_top_left_ypos
         PLA
         PLA
         JMP     L17B5
@@ -1150,11 +1150,11 @@ INCLUDE "repton-third-chord-note.asm"
         ; for 120 ms
         JSR     fn_wait_120ms
 
-        LDA     zp_repton_xpos
+        LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$0E
         TAX
-        LDA     zp_repton_ypos
+        LDA     zp_visible_screen_top_left_ypos
 
         CLC
         ADC     #$0E
@@ -1985,7 +1985,7 @@ INCLUDE "repton-third-chord-note.asm"
         SEC
         ; $14 - $06
         ; A=$0E
-        SBC     zp_repton_xpos
+        SBC     zp_visible_screen_top_left_xpos
 
         CLC
         ADC     #$04
@@ -1995,7 +1995,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Y=$04 - $F6 + $04 = $0E
         TYA
         SEC
-        SBC     zp_repton_ypos
+        SBC     zp_visible_screen_top_left_ypos
         CLC
         ADC     #$04
         TAY
@@ -2154,18 +2154,46 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;1B4E
 .fn_lookup_screen_tile_for_xpos_ypos
-        ; Current screen map is cached 
+        ; This is called with an xpos and a ypos that
+        ; can be between 0 and 255
+        ;
+        ; Anything greater than 127 is considered off map
+        ; and the default brick tile is used 
+        ;
+        ; If it's a between 0 and 127 it needs to be 
+        ; mapped to a map object on the 32 x 32 map
+        ;
+        ; This is achieved by dividing xpos and ypos by 4
+        ; to move from 128 x 128 co-ordinats to 32x32
+        ;
+        ; This allows the map object to be looked up
+        ;
+        ; Current screen map is decompressed and cached 
         ; between $0400 - $07FF
         ;
-        ; Each map is 32 Reptons wide and high
-        ; but repton is made up of 4 tiles in width
-        ; and 4 tiles in height
+        ; Each map can contain 32 x 32 objects
+        ; 
+        ; Map is serialised in memory e.g.
+        ; (0,0) (0,1) (0,2) ... (0,31) (1,0) (1,1) ... (1,31)... (31,31)
         ;
-        ; So map is 32 * 4 = 128 tiles wide
-        ;       and 32 * 4 = 128 tiles high
+        ; An object is e.g. a Diamond or Rock or Egg or Earth
+        ;
+        ; Each map object is 4 tiles wide 
+        ; and 4 tiles high though when displayed 
+        ;
+        ; Note that Repton is also 4 tiles wide and 
+        ; 4 tiles high (same as a map object)        
+        ; 
+        ; There is another lookup table that maps the object to 
+        ; each of the tiles that should be shown on screen for it
+        ;
+        ; So tile map on screen  is 32 * 4 = 128 tiles wide
+        ;                       and 32 * 4 = 128 tiles high
         ;
         ; Anything wider is "off" game screen
-        ; so use a default tile 
+        ; so use a default tile (X or Y > 127)
+        ; 
+        ; This routine is called with
         ;
         ; On entry:
         ;       X - contains xpos (0-$FF)
@@ -2180,18 +2208,19 @@ INCLUDE "repton-third-chord-note.asm"
         STX     zp_tile_x_pos_cache
         STY     zp_tile_y_pos_cache
 
-        ; If X is > 126 use the 
+        ; If X is > 126 ($7F) use the 
         ; default off-screen tile
         TXA
         BMI     use_default_off_screen_tile
 
-        ; If Y is > 126 use the 
+        ; If Y is > 126 ($7F) use the 
         ; default off-screen tile
         TYA
         BMI     use_default_off_screen_tile
 
         ; ------------------------------------
-        ; Calculation of map lookup address
+        ; Calculation of map object lookup address
+        ; based on (xpos, ypos)
         ; 
         ; Current map is stored as 32 x 32 = 1024 bytes
         ; From $0400 to $07FF
@@ -2254,7 +2283,8 @@ INCLUDE "repton-third-chord-note.asm"
         CLC
         ADC     #$04
         STA     zp_string_to_display_msb
-        ; End's map loookup table calculation
+        ; End map object lookup table calculation
+        ; (object not looked up yet)
         ; ------------------------------------
 
         ; ------------------------------------
@@ -2298,25 +2328,30 @@ INCLUDE "repton-third-chord-note.asm"
         AND     #$03
         STA     zp_general_xpos_lookup_calcs
 
-        ; Lookup the sprite at this (xpos,ypos)
+        ; Lookup the object at this (xpos,ypos) using
+        ; the address calculated in the first calculation
+        ; in this subroutine
         LDY     #$00
         LDA     (zp_string_to_display_lsb),Y
 
-        ; Move the sprite to Y
+        ; Move the object to Y
         TAY
 
-        ; Rest the MSB as another calculation is being performed
-        ; 
+        ; Reset the MSB as another address calculation 
+        ; is about to performed to be performed
         LDX     #$00
         STX     zp_string_to_display_msb
 
-        ; Get the sprite 
+        ; Retrieve again the object at this (xpos, ypos)
+        ; which was cached just earlier in Y
         TYA
 
-        ; Location of sprite = (sprint code * 16) + (y part * 4) + (x part) + $4000
+        ; Location of tile = (object * 16) + (y part * 4) + (x part) + $4000
 
-        ; Multiply the sprite typeby 16 (as each sprite is 16 bytes)
-        ; to get to the right one
+        ; Multiply the object by 16 
+        ; (as each object is defined by 16 bytes
+        ; to map it to the 4 tiles on each of its 
+        ; four rows)
         ASL     A
         ASL     A
         ASL     A
@@ -2448,31 +2483,33 @@ INCLUDE "repton-third-chord-note.asm"
         TAX
         LDA     L0EBF,X
         LDX     zp_screen_write_address_lsb
-        JMP     fn_display_mini_map
+        JMP     fn_display_tile
 
 ;L1BFB
 .fn_display_tile
         ; Preserve A - on entry it contains the 
         ; tile to write to the screen
-        ; TODO WHY SUBTRACT 8C / 8D
         PHA
         TXA
+
+        ; 
         SEC
-        SBC     zp_repton_xpos
+        SBC     zp_visible_screen_top_left_xpos
         TAX
+        
         ; If the xpos is beyond the end of the row
         ; then don't do anything
         CPX     #$20
-        BCS     end_display_mini_map
+        BCS     end_display_tile
 
         TYA
         SEC
-        SBC     zp_repton_ypos
+        SBC     zp_visible_screen_top_left_ypos
         TAY
         ; If the ypos is beyond the end of the row
         ; then don't do anything        
         CPY     #$20
-        BCS     end_display_mini_map
+        BCS     end_display_tile
 
         ; Calculate the screen address from the x position
         ; and y position (which are up to 32 x 32 in value)
@@ -2511,8 +2548,8 @@ INCLUDE "repton-third-chord-note.asm"
         ; Copy the tile to the screen (each tile is 8 bytes)
         LDY     #$07
 ;L1C32
-.loop_copy_mini_map_tile
-        ; Copy the mini map tile to the screen
+.loop_copy_tile
+        ; Copy the tile to the screen
         ; Each tile is 8 bytes so loop to copy 
         ; them all
         LDA     (zp_tile_load_address_lsb),Y
@@ -2895,9 +2932,9 @@ INCLUDE "repton-third-chord-note.asm"
         ; For a new game (restart) Repton's start 
         ; position is (2,2) on the map
         LDA     #$02
-        STA     zp_repton_xpos
+        STA     zp_visible_screen_top_left_xpos
         LDA     #$02
-        STA     zp_repton_ypos
+        STA     zp_visible_screen_top_left_ypos
 
         ; Start screen address is $6000 before scrolling
         LDA     #$00
@@ -2926,38 +2963,149 @@ INCLUDE "repton-third-chord-note.asm"
         ORA     data_screen_physical_colour_lookup,X
         JSR     fn_define_logical_colour
 
-        ; Looks like $000F is overloaded - not sure
-        ; what the value is
-        LDA     #$20
-        STA     zp_print_zero_or_not_flag
+        ; Repton's (xpos,ypos) represents the 
+        ; top left of the visible map so draw
+        ; tiles to the right and below that point:
+        ; (xpos,ypos) -------->
+        ; | ------------------>
+        ; | ------------------>
+        ; | ------------------>
+        ; v ------------------>
 
-        LDA     zp_repton_ypos
-        STA     L0013
-.L204A
+        ; Number of rows to draw objects for - game
+        ; screen is 32 x 32 so set this to 32
+        ; and draw bottom row first 
         LDA     #$20
-        STA     zp_screen_start_address_lsb
+        STA     zp_game_screen_row_to_draw
+
+        ; Get and cache the ypos of the visible
+        ; top left corner of the screen
+        LDA     zp_visible_screen_top_left_ypos
+        STA     zp_visible_screen_top_left_ypos_cache
+;L204A
+.loop_move_to_next_row
+        ; Number of columns to draw objects for - game
+        ; screen is 32 x 32 so set this to 32
+        ; and right hand column first
+        LDA     #$20
+        STA     zp_game_screen_column_to_draw
         
-        LDA     zp_repton_xpos
-        STA     L0012
-.L2052
-        LDX     L0012
-        LDY     L0013
-        ; Lookup tile
+        ; Get and cache the xpos of the visible
+        ; top left corner of the screen   
+        LDA     zp_visible_screen_top_left_xpos
+        STA     zp_visible_screen_top_left_xpos_cache
+;L2052
+.loop_draw_row_tiles
+        ; Load Repton's (xpos,ypos) into X and Y
+        ; as these are used as the co-ordinates when 
+        ; looking up which tile to show
+        LDX     zp_visible_screen_top_left_xpos_cache
+        LDY     zp_visible_screen_top_left_ypos_cache
+
+        ; Lookup tile to show at this (xpos, ypos)
         JSR     fn_lookup_screen_tile_for_xpos_ypos
 
+        ; Display the tile at this (xpos, ypos)
         JSR     fn_display_tile
 
-        INC     L0012
-        DEC     L000E
-        BNE     L3352
+        INC     zp_visible_screen_top_left_xpos_cache
+        DEC     zp_game_screen_column_to_draw
+        BNE     loop_draw_row_tiles
 
         JSR     fn_wait_for_vertical_sync
 
-        INC     L0013
-        DEC     L000F
-        BNE     L334A
+        INC     zp_visible_screen_top_left_ypos_cache
+        DEC     zp_game_screen_row_to_draw 
+        BNE     loop_move_to_next_row
 
         JSR     L24B3
+
+.L206E
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$02
+.L2073
+        AND     #$03
+L2074 = L2073+1
+        BNE     L2086
+
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$02
+        AND     #$03
+        BNE     L2086
+
+        NOP
+        NOP
+        NOP
+        JSR     L1F09
+
+.L2086
+        CLD
+        LDA     L0903
+        BEQ     L2097
+
+        BPL     L2094
+
+        JSR     L1C6B
+
+        JMP     L2097        
+
+.L2094
+        JSR     L1CA1
+
+.L2097
+        LDA     L0904
+        BEQ     L20A7
+
+        BPL     L20A4
+
+        JSR     L1CD6
+
+        JMP     L20A7
+
+.L20A4
+        JSR     L1D91
+
+.L20A7
+        CLI
+        LDA     L0903
+        BEQ     L20B6
+
+        LDA     zp_visible_screen_top_left_ypos
+        LSR     A
+        LSR     A
+        AND     #$01
+        STA     var_repton_animation_state
+.L20B6
+        LDA     zp_visible_screen_top_left_xpos
+        LSR     A
+        AND     #$07
+        TAX
+        LDA     L0904
+        BEQ     L20D2
+
+        BPL     L20CC
+
+        LDA     L0E22,X
+.L20C6
+        STA     var_repton_animation_state
+L20C8 = L20C6+2
+        JMP     L20D2
+
+.L20CC
+        LDA     L0E2A,X
+        STA     var_repton_animation_state
+.L20D2
+        LDA     L0903
+        ORA     L0904
+        BNE     L20E5
+
+        LDA     L0906
+        BMI     L20ED
+
+        INC     L0906
+        JMP     L2100        
 
 ;...
 ;L2158
@@ -4684,9 +4832,9 @@ INCLUDE "repton-third-chord-note.asm"
 INCLUDE "repton-logo.asm"
 ;2FC0
 INCLUDE "repton-sprites.asm"
-;4000
+;4000 - 41FF
 ; Map sprite tile offsets
-;41FF
+INCLUDE "repton-map-object-to-tile-defs.asm"
 ;4200
 ; Maps
-; ...
+; ...m 
