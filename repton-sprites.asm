@@ -2,9 +2,10 @@
 ; Start of sprites
 ; 
 ; The start address of a tile can be calculated using:
-;    address = (tile number * 8) + $2fC0
 ;
-.data_repton_sprites
+;    address = (tile number * 8) + $2FC0
+;
+.data_tiles
 ; $00   Rock (0,0) top left rounded corner with yellow edge
         EQUB    $00,$00,$10,$21,$21,$53,$43,$41
 ; $01   Rock (0,1) top middle left curving with yellow edge

@@ -68,8 +68,16 @@ INCLUDE "repton-third-chord-note.asm"
         TYA
         PHA
 
+        ; Limit the rate at which the notes are played
+        ; only play every 8th time this is called - this is
+        ; achieved by ANDing with 7 / 0000 0111
+        INC     var_music_rate_cycle
+        LDA     var_music_rate_cycle
+        AND     #$07
+        BNE     end_event_handler_IRQ2V        
+
         ; Get the next note sequence number to play
-        INC     L09FE
+        INC     var_note_sequence_number
         ; Set to channel 1 and flush the sound channel
         ; if a note is already playing
         LDA     #$11
@@ -78,7 +86,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Get the next note sequence number to play
         LDX     var_note_sequence_number
 
-.L0D20
+        ; Load the note and play the note
         LDA     data_first_chord_note,X
         JSR     fn_set_sound_block_and_play_sound
 
@@ -95,7 +103,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     data_third_chord_note,X
         JSR     fn_set_sound_block_and_play_sound
 
-.L0D38
+        ; End the processing here
         JMP     end_event_handler_IRQ2V
 
 ;0D3B
@@ -128,7 +136,8 @@ INCLUDE "repton-third-chord-note.asm"
         ; Seems to be called when going back to the game
         ; before Repton is drawn on the screen
 ;0D56
-        JSR     L19BA
+.fn_draw_repton
+        JSR     fn_lookup_repton_sprite_and_display
 
 
 ;0D59
@@ -304,9 +313,17 @@ INCLUDE "repton-third-chord-note.asm"
         EQUB    HI(sprite_repton_standing_looking_l)  
         EQUB    HI(sprite_explosion_big)
         EQUB    HI(sprite_explosion_medium)
-        EQUB    HI(sprite_explosion_small) 
+        EQUB    HI(sprite_explosion_small)
+;0E22
 
-;...       
+;...
+;0E36
+; TODO 
+; Lookup table of a moving bit 
+; e.g. 1, 2, 4, 8, 16, 32, 64, 128
+; 00000001, 00000010, 00000100 ..... 10000000
+        EQUB    $01,$02,$04,$08,$10,$20,$40,$80      
+;... 
 
 ; 0E46
 .envelope_1
@@ -515,7 +532,8 @@ INCLUDE "repton-third-chord-note.asm"
         ; Y - always $FF
         ;
         ; On return X and Y will contain $FF if
-        ; it was being pressed
+        ; it was being pressed and A will be set
+        ; to $FF otherwise $00
         LDY     #$FF
         LDA     #$81
         JSR     OSBYTE
@@ -708,7 +726,7 @@ INCLUDE "repton-third-chord-note.asm"
 .L1119
         LDX     L0076
         LDY     L0077
-        JSR     L1BBD
+        JSR     fn_lookup_screen_object_for_x_y
 
         JSR     L1BEE
 
@@ -886,7 +904,7 @@ INCLUDE "repton-third-chord-note.asm"
 ;L11AE
 .loop_get_next_string_byte
         LDY     zp_string_to_display_current_byte
-        LDA     (zp_string_to_display_lsb),Y
+        LDA     (zp_object_or_string_address_lsb),Y
 
         ; Carriage return indicates end of string
         ; so end if we find one
@@ -1225,9 +1243,9 @@ INCLUDE "repton-third-chord-note.asm"
         ; Next string to write to the screen is 
         ; stored at $2CD4                
         LDA     #LO(text_r_to_restart)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
         LDA     #HI(text_r_to_restart)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -1237,7 +1255,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Set the LSB for the "Press escape to
         ; kill yourself" string
         LDA     #LO(text_press_escape)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
         RTS
 
         ; Spare bytes
@@ -1303,7 +1321,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; "By, Superior Software"
         ; Set the LSB to the string
         LDA     #LO(text_by_superior_software)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the cursor poxition to (5,8)
         ; to position it below the repton logo
@@ -1312,7 +1330,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Set the MSB to the string
         LDA     #HI(text_by_superior_software)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -1324,14 +1342,14 @@ INCLUDE "repton-third-chord-note.asm"
         ; stored at $0EF9
         ; Set the LSB to the string
         LDA     #LO(text_score)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the cursor poxition to (11,10)
         LDX     #$0B
         LDY     #$0A
         ; Set the MSB to the string
         LDA     #HI(text_score)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -1340,7 +1358,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; stored at $0F02 and is "Hi-Score :"
         ; Set the LSB to the string
         LDA     #LO(text_hi_score)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the cursor position to (8,12)
         LDX     #$08
@@ -1348,7 +1366,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Set the MSB to the string
         LDA     #HI(text_hi_score)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
         JSR     fn_write_string_to_screen
 
         ;-----------------------------------
@@ -1358,7 +1376,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; stored at $0F0D and is "Time :"
         ; Set the LSB to the string
         LDA     #LO(text_time)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the cursor position to (12,14)
         LDX     #$0C
@@ -1366,7 +1384,7 @@ INCLUDE "repton-third-chord-note.asm"
         
         ; Set the MSB to the string
         LDA     #HI(text_time)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -1378,7 +1396,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; stored at $0F14
         ; Set the LSB to the string
         LDA     #LO(text_lives)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the cursor position to (11,16)
         LDX     #$0B
@@ -1386,7 +1404,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Set the MSB to the string
         LDA     #HI(text_lives)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -1395,7 +1413,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; stored at $0F1C and is "Diamonds :"
         ; Set the LSB to the string
         LDA     #LO(text_diamonds)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the cursor position to (8,18)
         LDX     #$08
@@ -1403,7 +1421,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Set the MSB to the string
         LDA     #HI(text_diamonds)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -1415,7 +1433,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; stored at $0F27 
         ; Set the LSB to the string
         LDA     #LO(text_screen)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the cursor position to (10,20)
         LDX     #$0A
@@ -1423,7 +1441,7 @@ INCLUDE "repton-third-chord-note.asm"
         
         ; Set the MSB to the string
         LDA     #HI(text_screen)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -1435,7 +1453,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; stored at $0F3F 
         ; Set the LSB to the string
         LDA     #LO(text_sound)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the cursor position to (11,22)
         LDX     #$0B
@@ -1443,7 +1461,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Set the MSB of the string
         LDA     #HI(text_sound)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the "Sound :", "Music :" and 
         ; "Password :" strings to the screen
@@ -1468,7 +1486,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Set the MSB of the string
         ; No TODO LSB set?!!? SET BREAKPOINT
         LDA     #HI(text_press_return)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
         JSR     fn_write_string_to_screen
 
         ;-----------------------------------
@@ -1478,7 +1496,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; stored at $0F75
         ; Set the LSB to the string
         LDA     #LO(text_press_return)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the cursor position to (2,20)
         LDX     #$02
@@ -1486,7 +1504,7 @@ INCLUDE "repton-third-chord-note.asm"
 .L1863
         ; Set the MSB of the string
         LDA     #HI(text_press_return)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -1498,7 +1516,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; stored at $0F96
         ; Set the LSB to the string
         LDA     #LO(text_press_space)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
         
         ; Set the cursor position to (2,21)
         LDX     #$02
@@ -1506,7 +1524,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Set the MSB to the string
         LDA     #HI(text_press_space)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -2252,7 +2270,7 @@ INCLUDE "repton-third-chord-note.asm"
 
 
         LDA     #$00
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
 
         ; Each row is 32 characters wide so ypos
@@ -2264,9 +2282,9 @@ INCLUDE "repton-third-chord-note.asm"
         ASL     A
         ASL     A
         ; Put any carry in to the MSB
-        ROL     zp_string_to_display_msb
+        ROL     zp_object_or_string_address_msb
         ASL     A
-        ROL     zp_string_to_display_msb
+        ROL     zp_object_or_string_address_msb
 
         ; Add on the (xpos / 4) calculated earlier
         ; so it's at the right offset in the table
@@ -2274,15 +2292,15 @@ INCLUDE "repton-third-chord-note.asm"
         ADC     zp_general_xpos_lookup_calcs
 
         ; Store the table position         
-        STA     zp_string_to_display_lsb
-        LDA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_lsb
+        LDA     zp_object_or_string_address_msb
         
         ; Add $0400 as the table is stored at $0400-$04FF
         ; Tile can be retrieved from this address held in 
         ; LSB / MSB
         CLC
         ADC     #$04
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
         ; End map object lookup table calculation
         ; (object not looked up yet)
         ; ------------------------------------
@@ -2332,7 +2350,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; the address calculated in the first calculation
         ; in this subroutine
         LDY     #$00
-        LDA     (zp_string_to_display_lsb),Y
+        LDA     (zp_object_or_string_address_lsb),Y
 
         ; Move the object to Y
         TAY
@@ -2340,7 +2358,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Reset the MSB as another address calculation 
         ; is about to performed to be performed
         LDX     #$00
-        STX     zp_string_to_display_msb
+        STX     zp_object_or_string_address_msb
 
         ; Retrieve again the object at this (xpos, ypos)
         ; which was cached just earlier in Y
@@ -2356,8 +2374,8 @@ INCLUDE "repton-third-chord-note.asm"
         ASL     A
         ASL     A
         ASL     A
-        ROL     zp_string_to_display_msb
-        STA     zp_string_to_display_lsb
+        ROL     zp_object_or_string_address_msb
+        STA     zp_object_or_string_address_lsb
 
         ; Multiply the y part by 4 to get to the nth row of the sprite
         LDA     zp_general_ypos_lookup_calcs
@@ -2366,14 +2384,14 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Add on the xpart to get to the right column
         CLC
-        ADC     zp_string_to_display_lsb
+        ADC     zp_object_or_string_address_lsb
         ADC     L0008
-        STA     zp_string_to_display_lsb
-        LDA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_lsb
+        LDA     zp_object_or_string_address_msb
 
         ; Add $4000 which is the starting point for the sprites
         ORA     #$40
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
         ; ------------------------------------
 
         ; Reloaad the xpos
@@ -2381,7 +2399,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Reset Y and load the sprite part tile
         LDY     #$00
-        LDA     (zp_string_to_display_lsb),Y
+        LDA     (zp_object_or_string_address_lsb),Y
 
         ; PHA/PLA seem redundant?
         PHA
@@ -2393,21 +2411,23 @@ INCLUDE "repton-third-chord-note.asm"
         ; current (xpos,ypos)
         RTS
 ;...
-.L1BB4
-        ; TODO Never executed as this is never called?
-        ; vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-        ; Set the string to display to $E0E0
+;L1BB4
+.set_default_off_screen_object
+        ; Set the string to display to $E0E0 (garbage)
         ; if beyond the end of a row or beyond
         ; the last row on the screen
         LDA     #$E0
-        STA     zp_string_to_display_lsb
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_lsb
+        STA     zp_object_or_string_address_msb
         LDA     #$16
         RTS
-        ; vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
-.L1BBD
-        ; Cache the xpos and ypos as the code
+
+;L1BBD
+.fn_lookup_screen_object_for_x_y
+        ; Looks up object using (x,y) not (xpos,ypos)
+        ; i.e. 32 x 32 co-ordinates
+        ; Cache the x and y as the code
         ; uses the X and Y registers
         STX     zp_tile_x_pos_cache
         STY     zp_tile_y_pos_cache
@@ -2415,21 +2435,21 @@ INCLUDE "repton-third-chord-note.asm"
         ; Check the end ofthe row hasn't been reach
         ; it's 32 characters wide then abort
         CPX     #$20
-        BCS     L1BB4
+        BCS     set_default_off_screen_object
 
         ; Check the bottom of the screen hasn't been reached
         ; it's 32 characters wide then abort
         CPY     #$20
-        BCS     L1BB4
+        BCS     set_default_off_screen_object
 
         LDA     #$00
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
         ; Calculate the tile cache for (xpos,ypos)
         ; Screen map tiles cached at $0400
         ;
         ; Address of tile = X + (Y*32) + 1024
-        ; or 
-        ; Address of tile = X + (Y*32) + $0400
+        ; or in hex
+        ; Address of tile = X + (Y*$20) + $0400
         ; 
         ; Note that the code ORs $04 with the MSB
         ; to add it on but same effect
@@ -2441,24 +2461,24 @@ INCLUDE "repton-third-chord-note.asm"
         ASL     A
         ASL     A
         ASL     A
-        ROL     zp_string_to_display_msb
+        ROL     zp_object_or_string_address_msb
         ASL     A
-        ROL     zp_string_to_display_msb
+        ROL     zp_object_or_string_address_msb
 
         ; Add X to the LSB (will never carry)
         ORA     zp_tile_x_pos_cache
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Add $0400 to the address by adding
         ; $04 to the MSB
-        LDA     zp_string_to_display_msb
+        LDA     zp_object_or_string_address_msb
         ORA     #$04
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
-        ; Load the tile for this (xpos,ypos) from
-        ; the cache that starts at $0400
+        ; Load the object for this (x,y) from
+        ; the current screen cache that starts at $0400
         LDY     #$00
-        LDA     (zp_string_to_display_lsb),Y
+        LDA     (zp_object_or_string_address_msb),Y
 
         ; Reset the X and Y registers 
         ; NOTE pushing then pulling A onto the
@@ -2641,9 +2661,12 @@ INCLUDE "repton-third-chord-note.asm"
         TAX
         LDA     L0E36,X
         AND     (zp_screen_password_lookup_lsb),Y
+
+        ; If the value is zero then return zero
         CMP     #$00
         BEQ     L1E74
 
+        ; Otherwise return $FF
         LDA     #$FF
 .L1E74
         RTS
@@ -2651,6 +2674,7 @@ INCLUDE "repton-third-chord-note.asm"
 .L1E75
         ; Reset the password lookup index now we 
         ; have the password matched to a screen
+        ; 72
         STX     zp_screen_password_lookup_index
         STY     L0073
         STX     L0074
@@ -2658,13 +2682,17 @@ INCLUDE "repton-third-chord-note.asm"
 
         LDA     #$00
         STA     L0076
+        ; 72
         ASL     zp_screen_password_lookup_index
         ROL     L0073
+        ; 72
         ASL     zp_screen_password_lookup_index
         ROL     L0073
         CLC
+        ; 72
         LDA     zp_screen_password_lookup_index
         ADC     L0074
+        ; 72
         STA     zp_screen_password_lookup_index
         LDA     L0073
         ADC     L0075
@@ -2701,7 +2729,7 @@ INCLUDE "repton-third-chord-note.asm"
         RTS
 ;...
 ;1EBF
-.L1EBF
+.fn_reset_game
         ; Reset the screen number if negative
         ; otherwise load the current screen into A
         JSR     fn_reset_start_and_started_on_screen
@@ -2714,35 +2742,146 @@ INCLUDE "repton-third-chord-note.asm"
         ; Store in 78   
         STA     L0078
 
+        ; Reset 77 80 and the number of 
+        ; diamonds left
         LDA     #$00
         STA     L0077
-        STA     L0079
+        STA     ; Clear the current map cache location
         STA     var_number_diamonds_left
 
+        ; Dunno, some counter... that goes from 4 to 8
         LDA     #$04
-        STA     L007A
+        STA     zp_current_map_cache_msb
 .L1ED3
+        ; Decode the compressed map at this (xpos,ypos)
         LDX     L0077
         LDY     L0078
-        ; 3175
         JSR     L1E75
 
-        ; 79 and 7A are set to the map cahce area
-        ; for the current screen
+        ; Set the current screen map cache (0400-07FF)
+        ; to tbe the looked up object
         LDY     #$00
-        STA     (L0079),Y
+        STA     (zp_current_map_cache_lsb),Y
 
-        ;
+        ; If the current object is a Diamond ($1E)
+        ; increment the number of diamonds to collect
         CMP     #$1E
-        BNE     L1EE5
+        BNE     check_if_object_is_a_safe
 
+        ; It's a diamond so increment
         INC     var_number_diamonds_left
-.L1EE5
+;L1EE5
+.check_if_object_is_a_safe
+        ; If the current object is a Safe ($17)
+        ; increment the number of diamonds to collect
         CMP     #$17
         BNE     L1EEC
 
+        ; It's a safe so increment
         INC     var_number_diamonds_left        
 ;...
+.L1F09
+        LDA     #$00
+        STA     L0903
+        STA     L0904
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$0E
+        LSR     A
+        LSR     A
+        TAX
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0D
+        LSR     A
+        LSR     A
+        TAY
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Is it Earth type 2
+        CMP     #$18
+        BCC     L1F3A
+
+        ; Is it an Egg?
+        CMP     #$1C
+        BEQ     L1F3A
+
+        ; Is it a rock?
+        CMP     #$1D
+        BEQ     L1F3A
+
+        ; Check to see if the : key is being pressed
+        ; (Move Repton Up)
+        LDA     #$B7
+        JSR     fn_read_key
+
+        ; If it wasn't being pressed then branch away
+        BEQ     L1F3A
+
+        INC     L0903
+.L1F3A
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$0E
+        LSR     A
+        LSR     A
+        TAX
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$12
+        LSR     A
+        LSR     A
+        TAY
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Is it Earth type 2
+        CMP     #$18
+        BCC     L1F63
+
+        ; Is it an egg?
+        CMP     #$1C
+.L1F53
+        BEQ     L1F63
+
+        ; Is it an rock?
+        CMP     #$1D
+        BEQ     L1F63
+
+        ; Check to see if the / key is being pressed
+        ; (Move Repton Down)
+        LDA     #$97
+        JSR     fn_read_key
+
+        BEQ     L1F63
+
+        DEC     L0903
+.L1F63
+        ; Check to see if the Z key is being pressed
+        ; (Move Repton Left)
+        LDA     #$9E
+        JSR     fn_read_key
+
+        BEQ     L1F6D
+
+        DEC     L0904
+.L1F6D
+        ; Check to see if the X key is being pressed
+        ; (Move Repton Right)
+        LDA     #$BD
+        JSR     fn_read_key
+
+        BEQ     L1F77
+
+        INC     L0904
+.L1F77
+        LDA     L0903
+        BEQ     L1F81
+
+        LDA     #$00
+        STA     L0904
+.L1F81
+        RTS
+
 ;L1F82
 .fn_dissolve_screen
         ; Disable Vsync event and change the palette
@@ -2900,7 +3039,7 @@ INCLUDE "repton-third-chord-note.asm"
         STA     var_score_lsb
         STA     var_score_mlsb
         STA     var_score_msb
-        JSR     L1EBF
+        JSR     fn_reset_game
 
 ;L2008
 .fn_reset_and_show_start_screen
@@ -2963,7 +3102,7 @@ INCLUDE "repton-third-chord-note.asm"
         ORA     data_screen_physical_colour_lookup,X
         JSR     fn_define_logical_colour
 
-        ; Repton's (xpos,ypos) represents the 
+        ; (xpos,ypos) represents the 
         ; top left of the visible map so draw
         ; tiles to the right and below that point:
         ; (xpos,ypos) -------->
@@ -2972,9 +3111,18 @@ INCLUDE "repton-third-chord-note.asm"
         ; | ------------------>
         ; v ------------------>
 
+        ; 1. Map is made of 32 x 32 objects
+        ; 2. Each object is 4 tiles wide and 4 tiles high
+        ; 3. Repton is 4 tiles wide and 4 tiles high 
+        ; 4. Map is therefore map of 128 x 128 tiles 
+        ; 5. Visible screen area is 32 x 32 tiles 
+        ; 
+        ; (xpos,ypos) contains the *tile* co-ordinate
+        ; of the top left corner of the screen so
+        ; 0 <= xpos < 128 and 0 <= ypos < 128
+        ; 
         ; Number of rows to draw objects for - game
         ; screen is 32 x 32 so set this to 32
-        ; and draw bottom row first 
         LDA     #$20
         STA     zp_game_screen_row_to_draw
 
@@ -2986,7 +3134,6 @@ INCLUDE "repton-third-chord-note.asm"
 .loop_move_to_next_row
         ; Number of columns to draw objects for - game
         ; screen is 32 x 32 so set this to 32
-        ; and right hand column first
         LDA     #$20
         STA     zp_game_screen_column_to_draw
         
@@ -2996,51 +3143,96 @@ INCLUDE "repton-third-chord-note.asm"
         STA     zp_visible_screen_top_left_xpos_cache
 ;L2052
 .loop_draw_row_tiles
-        ; Load Repton's (xpos,ypos) into X and Y
+        ; Load top left corner visible screen 
+        ; (xpos,ypos) into X and Y
         ; as these are used as the co-ordinates when 
         ; looking up which tile to show
         LDX     zp_visible_screen_top_left_xpos_cache
         LDY     zp_visible_screen_top_left_ypos_cache
 
         ; Lookup tile to show at this (xpos, ypos)
+        ; Looks up object first then which tile for that
+        ; object to show at this (xpos,ypos)
         JSR     fn_lookup_screen_tile_for_xpos_ypos
 
         ; Display the tile at this (xpos, ypos)
         JSR     fn_display_tile
 
+        ; Move to the next column xpos (xpos+1, ypos)
         INC     zp_visible_screen_top_left_xpos_cache
+        ; Decrement the remaining to draw counter for
+        ; this row
         DEC     zp_game_screen_column_to_draw
+        ; If still some to draw on this row then
+        ; loop back around (screen only shows
+        ; 32 tiles out of full 128 on the map)
         BNE     loop_draw_row_tiles
 
+        ; Wait for vertical sync before drawing next
+        ; row
         JSR     fn_wait_for_vertical_sync
 
+        ; Move to the next row ypos (xpos, ypos+1)
         INC     zp_visible_screen_top_left_ypos_cache
+        ; Are all the rows drawn? If not then
+        ; loop back around (screen only shows
+        ; 32 tiles out of full 128 on the map)
         DEC     zp_game_screen_row_to_draw 
         BNE     loop_move_to_next_row
 
-        JSR     L24B3
+        ; Reset the music and draw repton
+        ; on the screen in the default standing
+        ; pose
+        JSR     fn_reset_music_and_draw_repton
 
 .L206E
+        ; Check to see if the x position is in 
+        ; at the start of a 32x32 grid position
+        ; (remember ypos is 0 to 127) so mask
+        ; it with 3 to see when it is zero
+        ; 
+        ; AND #$07 (0000 0011)
         LDA     zp_visible_screen_top_left_xpos
         CLC
+
+        ; Add 2 because the starting top left is 
+        ; (2,2) to show half a sprite on the top,
+        ; left, right and bottom margins - so to 
+        ; "align" and make the maths work add 2
         ADC     #$02
-.L2073
         AND     #$03
-L2074 = L2073+1
+
+        ; If it's not aligned to a 32x32 grid position
+        ; branch
         BNE     L2086
 
+        ; Check to see if the y position is in 
+        ; at the start of a 32x32 grid position
+        ; (remember ypos is 0 to 127) so mask
+        ; it with 3 to see when it is zero
+        ; 
+        ; AND #$07 (0000 0011)
         LDA     zp_visible_screen_top_left_ypos
         CLC
+        ; Add 2 because the starting top left is 
+        ; (2,2) to show half a sprite on the top,
+        ; left, right and bottom margins - so to 
+        ; "align" and make the maths work add 2        
         ADC     #$02
         AND     #$03
+
+        ; If it's not alinged to a 32x32 grid position
+        ; branch        
         BNE     L2086
 
+        ; Junk bytes - 3
         NOP
         NOP
         NOP
         JSR     L1F09
 
 .L2086
+        ; Clear Binary Coded Decimal mode
         CLD
         LDA     L0903
         BEQ     L2097
@@ -3272,9 +3464,9 @@ L20C8 = L20C6+2
 
         ; Set the string to write to "By, Superior Software"
         LDA     #LO(text_by_superior_software)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
         LDA     #HI(text_by_superior_software)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Display the string
         JSR     fn_write_string_to_screen
@@ -3283,9 +3475,9 @@ L20C8 = L20C6+2
         LDX     #$04
         LDY     #$1D
         LDA     #LO(text_press_space_bar_to_play)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
         LDA     #HI(text_press_space_bar_to_play)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Display the string
         JSR     fn_write_string_to_screen
@@ -3366,9 +3558,9 @@ L20C8 = L20C6+2
 
         ; Write the "Last Score : " string to the screen
         LDA     #LO(text_last_score)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
         LDA     #HI(text_last_score)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ;  Set cursor position to (8,26)
         LDY     #$1A
@@ -3602,7 +3794,7 @@ L20C8 = L20C6+2
         ; 
         ; Assume all names are in the same page
         LDA     #HI(data_high_score_names)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Set the LSB of the player name to display
         ; LSB = (offset * 8) + $18
@@ -3616,7 +3808,7 @@ L20C8 = L20C6+2
         ASL     A
         ASL     A
         ADC     #$18
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set cursor position to (10, ypos)
         ; Work out the screen row number
@@ -3653,6 +3845,24 @@ L20C8 = L20C6+2
         ; CODE!
         EQUS    $A9,$FF,$8D,$FE,$09,$A9,$FF,$8D,$FF,$09," ",$B4,$0F,"LV",$0D
         EQUS    "(C) Timothy Tyler 1985",$0D
+;...
+;L24B3
+.fn_reset_music_and_draw_repton
+        ; Reset the music tune to start at the beginning
+        LDA     #$FF
+        STA     var_note_sequence_number
+
+        ; Reset the current cycle through the interrupt
+        ; handle (used to rate limit the music)
+        LDA     #$FF
+        STA     var_music_rate_cycle
+
+        ; Wait for vertical sync
+        JSR     fn_wait_for_vertical_sync
+
+        ; Put repton on the screen in the default
+        ; Repton Standing pose
+        JMP     fn_draw_repton
 ;...
 ;2500
 .fn_reset_palette_to_default_game_colours
@@ -3727,9 +3937,9 @@ L20C8 = L20C6+2
         ; Otherwise, password is invalid
         ; Set the string to "Password not recognised"
         LDA     #HI(text_passwd_not_recognised)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
         LDA     #LO(text_passwd_not_recognised)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set cursor position to (4,12)
         LDX     #$04
@@ -3746,7 +3956,7 @@ L20C8 = L20C6+2
         ; only the MSB) here, LSB is set after
         ; return
         LDA     #HI(text_screen_matched)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
         RTS
 
 ;2544
@@ -3823,11 +4033,11 @@ L20C8 = L20C6+2
 
         ; Set the MSB of the string
         LDA     #HI(text_p_to_enter_password)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Set the LSB of the string
         LDA     #LO(text_p_to_enter_password)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Display the spring and set the LSB for the
         ; next string to write to be the Press escape to kill yourself
@@ -4070,18 +4280,18 @@ L20C8 = L20C6+2
         LDX     #$0A
         LDY     #$1E
         LDA     #HI(text_screen_complete_press_space)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
         LDA     #LO(text_screen_complete_press_space)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
         JSR     fn_write_string_to_screen
 
         ; Write "Amazing!  Now try again." at (0,16)
         LDX     #$00
         LDY     #$10
         LDA     #HI(text_screen_complete_amazing)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
         LDA     #LO(text_screen_complete_amazing)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Check to see if this was a play through
         ; from screen 0 if it wasn't then change
@@ -4092,7 +4302,7 @@ L20C8 = L20C6+2
         ; Player didn't start on screen 0 so tell them
         ; to do it again from screen 0
         LDA     #LO(text_screen_complete_well_done)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 ;2A9D
 .display_complete_string
         JSR     fn_write_string_to_screen
@@ -4298,9 +4508,9 @@ L20C8 = L20C6+2
 
         ; Set the string to "Enter Password"
         LDA     #LO(text_enter_password)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
         LDA     #HI(text_enter_password)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the string to the screen
         JSR     fn_write_string_to_screen
@@ -4400,7 +4610,7 @@ L20C8 = L20C6+2
         ; if not, routine below will display
         ; "password not recognised"
         ; If it did match, routine will set MSB
-        ; of zp_string_to_display_msb to $2
+        ; of zp_object_or_string_address_msb to $2
         JSR     fn_check_if_password_match
 
         ; Spare byte
@@ -4410,7 +4620,7 @@ L20C8 = L20C6+2
         ; Set the string to display to $2D40
         ; MSB was set in previous routine
         LDA     #$40
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the cursor to (11,16)
         LDX     #$0B
@@ -4724,11 +4934,11 @@ L20C8 = L20C6+2
         ; stored at $2E94
         ; Set the LSB to the string        
         LDA     #LO(text_music)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the MSB to the string   
         LDA     #HI(text_music)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
         ; Write the string
         JSR     fn_write_string_to_screen
 
@@ -4745,11 +4955,11 @@ L20C8 = L20C6+2
 
         ; Set the LSB to the string   
         LDA     #LO(text_password)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Set the MSB to the string   
         LDA     #HI(text_password)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Write the string and return
         JMP     fn_write_string_to_screen
@@ -4776,9 +4986,9 @@ L20C8 = L20C6+2
         ; Set the string to display to be 
         ; "Off" for the music status
         LDA     #HI(text_off)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
         LDA     #LO(text_off)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 
         ; Check the music status - if it's
         ; on then change the string to "On "
@@ -4788,7 +4998,7 @@ L20C8 = L20C6+2
         ; Change the LSB to point at the "On "
         ; string
         LDA     #LO(text_on)
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
 ;L2EC8
 .write_music_status
         JSR     fn_write_string_to_screen
@@ -4801,9 +5011,9 @@ L20C8 = L20C6+2
         ; same MSB
         LDX     var_screen_number
         LDA     data_password_lsb_lookup_table,X
-        STA     zp_string_to_display_lsb
+        STA     zp_object_or_string_address_lsb
         LDA     #LO(text_password_screen_a)
-        STA     zp_string_to_display_msb
+        STA     zp_object_or_string_address_msb
 
         ; Set the cursor position to (19,26)
         ; to position it at after "Password : "        
