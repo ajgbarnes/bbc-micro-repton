@@ -1,205 +1,434 @@
 ;2FC0 
 ; Start of sprites
+; 
+; The start address of a tile can be calculated using:
+;    address = (tile number * 8) + $2fC0
+;
 .data_repton_sprites
+; $00   Rock (0,0) top left rounded corner with yellow edge
         EQUB    $00,$00,$10,$21,$21,$53,$43,$41
+; $01   Rock (0,1) top middle left curving with yellow edge
         EQUB    $30,$C1,$0E,$2B,$0E,$7F,$0A,$06
+; $02   Rock (0,2) top middle right curving with yellow edge
         EQUB    $C0,$34,$3B,$17,$08,$02,$2A,$0D
+; $03   Rock (0,3) top right rounded corner with yellow edge        
         EQUB    $00,$00,$80,$40,$48,$28,$20,$6C
+; ---------------------------
+; $04   Egg  (0,0) top left 
         EQUB    $00,$00,$00,$00,$10,$10,$10,$30
+; $05   Egg  (0,1) top middle left curving         
         EQUB    $10,$70,$F0,$F0,$F0,$F0,$F0,$F0
+; $06   Egg  (0,2) top middle right curving         
         EQUB    $80,$E0,$F0,$F0,$F0,$F0,$F0,$F0
+; $07   Egg  (0,3) top right        
         EQUB    $00,$00,$00,$00,$80,$80,$80,$C0
+; ---------------------------
+; $08   Key  (0,0) top left         
         EQUB    $00,$00,$10,$10,$30,$21,$61,$41
+; $09   Key  (0,1) top middle left curving         
         EQUB    $30,$F0,$C1,$05,$05,$05,$07,$0B
+; $0A   Key  (0,2) top middle right curving        
         EQUB    $C0,$F0,$38,$0A,$0A,$0A,$0A,$0F
+; $0B   Key  (0,3) top right       
+; ---------------------------
         EQUB    $00,$00,$80,$80,$C0,$48,$68,$28
+; $0C   Solid rectangle no coloured edges        
         EQUB    $0F,$0F,$0F,$0F,$0F,$0F,$0F,$0F
+; $0D   Solid rectangle with yellow left edge      
         EQUB    $87,$87,$87,$87,$87,$87,$87,$87
+; $0E   Solid rectangle with yellow bottom edge
         EQUB    $0F,$0F,$0F,$0F,$0F,$0F,$0F,$F0
+; $0F   Solid rectangle with yellow right edge        
         EQUB    $1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E
+; $10   Solid rectangle with yellow top edge        
         EQUB    $F0,$0F,$0F,$0F,$0F,$0F,$0F,$0F
+; $11   Solid curving top left side with yellow left edge        
         EQUB    $00,$30,$43,$43,$87,$87,$87,$87
+; $12   Solid curving top right side with yellow right edge        
         EQUB    $00,$C0,$2C,$2C,$1E,$1E,$1E,$1E
+; $13   Solid curving bottom left side with yellow left edge        
         EQUB    $87,$87,$87,$87,$43,$43,$30,$00
+; $14   Solid curving bottom right side with yellow right edge        
         EQUB    $1E,$1E,$1E,$1E,$2C,$2C,$C0,$00
+; ---------------------------        
+; $15   Small brick pattern no yellow edges        
         EQUB    $00,$0D,$0D,$0D,$00,$07,$07,$07
+; $16   Small brick pattern with left yellow edge        
         EQUB    $80,$85,$85,$85,$80,$87,$87,$87
+; $17   Small brick pattern with right yellow edge        
         EQUB    $10,$1C,$1C,$1C,$10,$16,$16,$16
+; $18   Small circle bottom left brick pattern with left yellow edge        
         EQUB    $80,$85,$85,$C1,$40,$61,$30,$00
+; $19   Small circle bottom right brick pattern with right yellow edge        
         EQUB    $10,$1C,$1C,$3C,$20,$68,$C0,$00
+; $1A   Small circle top left brick pattern with left yellow edge and line on bottom        
         EQUB    $30,$61,$41,$C1,$80,$87,$87,$87
+; $1B   Small circle top right brick pattern with right yellow edge and line on bottom        
         EQUB    $C0,$68,$2C,$3C,$10,$16,$16,$16
+; ---------------------------
+; $1C   Left hand top sloping side of diamond        
         EQUB    $10,$10,$20,$20,$50,$40,$B0,$D0
+; $1D   Right hand top sloping side of diamond        
         EQUB    $80,$80,$40,$C0,$20,$E0,$B0,$50
+; $1E   Left hand bottom sloping side of diamond        
         EQUB    $D0,$A0,$60,$50,$20,$20,$10,$10
+; $1F   Right hand bottom sloping side of diamond        
         EQUB    $B0,$50,$E0,$20,$C0,$40,$80,$80
+; $20   Middle of diamond 1        
         EQUB    $50,$E0,$B0,$40,$B0,$50,$20,$D0
+; $21   Middle of diamond 2        
         EQUB    $80,$30,$A0,$F0,$20,$90,$60,$A0
+; ---------------------------        
+; $22   Earth segment 1
         EQUB    $02,$0A,$05,$0D,$02,$09,$0A,$01
+; $23   Earth segment 2        
         EQUB    $04,$0D,$02,$06,$01,$0E,$0A,$0A
+; $24   Earth segment 3        
         EQUB    $05,$0D,$02,$09,$06,$0B,$04,$02
+; $25   Earth segment 4        
         EQUB    $02,$0A,$05,$0A,$02,$05,$09,$05
+; $26   Earth segment 5        
         EQUB    $0B,$0C,$02,$03,$0D,$0A,$01,$06
+; $27   Earth segment 6        
         EQUB    $04,$0B,$09,$04,$03,$0D,$02,$0E
+; ---------------------------                
+; $28   Rock (1,0) upper middle row with left yellow edge        
         EQUB    $41,$A6,$87,$E7,$97,$E6,$D7,$E7
+; $29   Rock (1,1) upper middle row middle left        
         EQUB    $2A,$4F,$3F,$0B,$2F,$1B,$0F,$EF
+; $2A   Rock (1,2) upper middle row middle right        
         EQUB    $6E,$33,$4D,$0A,$CC,$2F,$8A,$6F
+; $2B   Rock (1,3) upper middle row with right yellow edge        
         EQUB    $20,$DC,$76,$18,$54,$54,$5C,$10
+; ---------------------------           
+; $2C   Egg  (1,0) upper middle row left edge
         EQUB    $30,$30,$70,$70,$70,$70,$70,$F0
+; $2D   Egg  (1,1) upper middle row middle left        
         EQUB    $F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0
+; $2E   Egg  (1,2) upper middle row middle right        
         EQUB    $F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0
+; $2F   Egg  (1,3) upper middle row right edge        
         EQUB    $C0,$C0,$E0,$E0,$E0,$E0,$F0,$F0
+; ---------------------------                   
+; $30   Key  (1,0) upper middle row with left edge        
         EQUB    $41,$40,$C0,$87,$83,$80,$81,$97
+; $31   Key  (1,1) upper middle row middle left        
         EQUB    $0B,$1F,$1F,$17,$1F,$1E,$3C,$EC
+; $32   Key  (1,2) upper middle row middle right        
         EQUB    $0D,$8F,$8F,$8E,$8F,$86,$C3,$73
+; $33   Key  (1,3) upper middle row with right edge        
         EQUB    $28,$20,$34,$1C,$18,$16,$1C,$9E
+; ---------------------------
+; $34   Yellow brick on solid red left hand edge        
         EQUB    $0F,$0F,$78,$78,$78,$78,$0F,$0F
+; $35   Yellow brick on solid red middle        
         EQUB    $0F,$0F,$F0,$F0,$F0,$F0,$0F,$0F
+; $36   Yellow brick on solid red right hand edge        
         EQUB    $0F,$0F,$E1,$E1,$E1,$E1,$0F,$0F
+; ---------------------------
+; $37   Safe top left        
         EQUB    $70,$F0,$F7,$F7,$E6,$C4,$D5,$D5
+; $38   Safe top middle        
         EQUB    $F0,$F0,$FF,$FF,$00,$00,$FF,$FF
+; $39   Safe top right corner        
         EQUB    $E0,$F0,$FE,$FE,$76,$32,$BA,$BA
+; $3A   Safe middle left        
         EQUB    $D5,$D5,$D5,$D5,$D5,$D5,$D5,$D5
+; $3B   Safe middle middle        
         EQUB    $5F,$AF,$5F,$AF,$5F,$AF,$5F,$AF
+; $3C   Safe middle right        
         EQUB    $BA,$BA,$BA,$BA,$BA,$BA,$BA,$BA
+; $3D   Safe bottom left        
         EQUB    $D5,$D5,$C4,$E6,$F7,$F7,$F0,$70
+; $3E   Safe bottom middle        
         EQUB    $FF,$FF,$00,$00,$FF,$FF,$F0,$F0
+; $3F   Safe bottom right        
         EQUB    $BA,$BA,$32,$76,$FE,$FE,$F0,$E0
+; ---------------------------
+; $40   Brick interior 1 
         EQUB    $00,$0F,$0F,$0F,$00,$07,$07,$07
+; $41   Brick interior 2         
         EQUB    $00,$07,$07,$07,$00,$0F,$0F,$0F
+; $42   Brick with yellow top edge 1        
         EQUB    $F0,$0F,$0F,$0F,$00,$07,$07,$07
+; $43   Brick with yellow top edge 2        
         EQUB    $F0,$07,$07,$07,$00,$0F,$0F,$0F
+; $44   Brick with yellow left edge        
         EQUB    $80,$87,$87,$87,$80,$87,$87,$87
+; $45   Brick with yellow right edge        
         EQUB    $10,$16,$16,$16,$10,$1E,$1E,$1E
+; $46   Brick with yellow bottom edge 1        
         EQUB    $00,$0F,$0F,$0F,$00,$07,$07,$F0
+; $47   Brick with yellow bottom edge 2        
         EQUB    $00,$07,$07,$07,$00,$0F,$0F,$F0
+; $48   Brick with rounded top left corner with yellow edge        
         EQUB    $00,$10,$21,$43,$40,$87,$87,$87
+; $49   Brick with slightly rounded left and flat top with yellow edge        
         EQUB    $70,$87,$07,$07,$00,$0F,$0F,$0F
+; $4A   Brick with slightly rounded right and flat top with yellow edge        
         EQUB    $E0,$1E,$0F,$0F,$00,$07,$07,$07
+; $4B   Brick with rounded top right corner with yellow edge        
         EQUB    $00,$80,$40,$24,$20,$1E,$1E,$1E
+; $4C   Brick with rounded bottom left corner with yellow edge        
         EQUB    $80,$87,$87,$43,$40,$21,$10,$00
+; $4D   Brick with slightly rounded left and flat bottom with yellow edge        
         EQUB    $00,$07,$07,$07,$00,$0F,$87,$70
+; $4E   Brick with slightly rounded right and flat bottom with yellow edge        
         EQUB    $00,$0F,$0F,$0F,$00,$07,$16,$E0
+; $4F   Brick with rounded bottom right corner with yellow edge        
         EQUB    $10,$16,$16,$24,$20,$48,$80,$00
+; ---------------------------
+; $50   Rock (2,0) lower middle row with left yellow edge        
         EQUB    $97,$C5,$85,$96,$87,$87,$85,$43
+; $51   Rock (2,1) lower middle row middle left        
         EQUB    $02,$CD,$8B,$1D,$A3,$1F,$86,$8F
+; $52   Rock (2,2) lower middle row middle right        
         EQUB    $06,$2F,$8E,$9F,$05,$1B,$2F,$9F
+; $53   Rock (2,3) lower middle row with right yellow edge        
         EQUB    $3A,$5E,$14,$18,$16,$1E,$1E,$24
+; ---------------------------
+; $54   Egg  (2,0) lower middle row left edge     
         EQUB    $F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0
+; $55   Egg  (2,1) lower middle row middle left        
         EQUB    $F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0
+; $56   Egg  (2,2) lower middle row middle right        
         EQUB    $F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0
+; $57   Egg  (2,3) lower middle row right edge        
         EQUB    $F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0
+; ---------------------------
+; $58   Key  (2,0) lower middle row with left edge        
         EQUB    $97,$83,$86,$81,$83,$C2,$40,$41
+; $59   Key  (2,1) lower middle row middle left        
         EQUB    $EC,$3C,$16,$1F,$17,$1F,$1F,$0B
+; $5A   Key  (2,2) lower middle row middle right        
         EQUB    $73,$C3,$87,$8F,$8E,$8F,$8F,$0D
+; $5B   Key  (2,3) lower middle row with right edge        
         EQUB    $9E,$18,$10,$1C,$1E,$30,$20,$28
+; ---------------------------  
+; $5C   Character - 0      
         EQUB    $44,$AA,$AA,$AA,$AA,$AA,$44,$00
+; $5D   Character - 1        
         EQUB    $44,$CC,$44,$44,$44,$44,$EE,$00
+; $5E   Character - 2        
         EQUB    $EE,$22,$22,$EE,$88,$88,$EE,$00
+; $5F   Character - 3        
         EQUB    $EE,$22,$22,$66,$22,$22,$EE,$00
+; $60   Character - 4        
         EQUB    $AA,$AA,$AA,$EE,$22,$22,$22,$00
+; $61   Character - 5        
         EQUB    $EE,$88,$88,$EE,$22,$22,$EE,$00
+; $62   Character - (        
         EQUB    $22,$44,$44,$44,$44,$44,$22,$00
+; $63   Character - )        
         EQUB    $44,$22,$22,$22,$22,$22,$44,$00
+; ---------------------------  
+; $64   Character - top left hand side rounded brick        
         EQUB    $30,$41,$41,$85,$80,$87,$87,$87
+; $65   Character - top right hand side rounded brick        
         EQUB    $C0,$2C,$2C,$1C,$10,$16,$16,$16
+; $66   Character - bottom left hand side rounded brick        
         EQUB    $80,$85,$85,$85,$80,$43,$43,$30
+; $67   Character - bottom right hand side rounded brick        
         EQUB    $10,$1C,$1C,$1C,$10,$24,$24,$C0
+; $68   Character - earth 1        
         EQUB    $55,$AA,$55,$AA,$55,$AA,$55,$AA
+; $69   Character - earth 2        
         EQUB    $AA,$55,$AA,$55,$AA,$55,$AA,$55
+; $6A   Character - left hand brick edge        
         EQUB    $80,$85,$85,$85,$80,$87,$87,$87
+; $6B   Character - right hand brick edge        
         EQUB    $10,$1C,$1C,$1C,$10,$16,$16,$16
+; $6C   Character - -        
         EQUB    $00,$00,$00,$EE,$00,$00,$00,$00
+; $6D   Character - top brick edge        
         EQUB    $F0,$0D,$0D,$0D,$00,$07,$07,$07
+; $6E   Character - bottom brick edge        
         EQUB    $00,$0D,$0D,$0D,$00,$07,$07,$F0
+; $6F   Character - interior brick        
         EQUB    $00,$0D,$0D,$0D,$00,$07,$07,$07
+; $70   Character - yellow red brick        
         EQUB    $F0,$87,$87,$87,$F0,$1E,$1E,$1E
+; $71   Character - /        
         EQUB    $00,$22,$22,$44,$44,$88,$88,$00
+; $72   Character - four blocks        
         EQUB    $0A,$A0,$0A,$00,$0A,$A0,$0A,$00
+; $73   Black tile        
         EQUB    $00,$00,$00,$00,$00,$00,$00,$00
+; $74   Character - ?        
         EQUB    $EE,$AA,$22,$22,$44,$00,$44,$44
+; $75   Character - two vertical oval blocks        
         EQUB    $0A,$0A,$A0,$0A,$A0,$0A,$0A,$00
+; $76   Character - two horizontal oval blocks        
         EQUB    $0E,$E0,$0E,$00,$0E,$E0,$0E,$00
+; $77   Character - inverted brick        
         EQUB    $0F,$05,$0F,$0A,$0F,$05,$0F,$0A
+; ---------------------------          
+; $78   Rock (3,0) bottom left rounded corner with yellow edge
         EQUB    $52,$43,$43,$21,$21,$10,$00,$00
+; $79   Rock (3,1) bottom middle left curving with yellow edge        
         EQUB    $4B,$4B,$A5,$0B,$0F,$0D,$C3,$30
+; $7A   Rock (3,2) bottom middle right curving with yellow edge        
         EQUB    $5F,$8F,$0B,$45,$0F,$07,$3C,$C0
+; $7B   Rock (3,3) bottom right rounded corner with yellow edge        
         EQUB    $2C,$24,$2C,$48,$48,$80,$00,$00
+; ---------------------------  
+; $7C   Egg  (3,0) bottom left         
         EQUB    $70,$70,$70,$70,$30,$30,$10,$00
+; $7D   Egg  (3,1) bottom middle left curving        
         EQUB    $F0,$F0,$F0,$F0,$F0,$F0,$F0,$70
+; $7E   Egg  (3,2) bottom middle right curving         
         EQUB    $F0,$F0,$F0,$F0,$F0,$F0,$F0,$E0
+; $7F   Egg  (3,3) bottom right        
         EQUB    $E0,$E0,$E0,$E0,$C0,$C0,$80,$00
+; ---------------------------          
+; $80   Key  (3,0) bottom left 
         EQUB    $41,$61,$21,$30,$10,$10,$00,$00
+; $81   Key  (3,1) bottom middle left curving         
         EQUB    $0F,$05,$05,$05,$05,$C1,$F0,$30
+; $82   Key  (3,2) bottom middle right curving         
         EQUB    $0D,$0E,$0A,$0A,$0A,$38,$F0,$C0
+; $83   Key  (3,3) bottom right
         EQUB    $28,$68,$48,$C0,$80,$80,$00,$00
+; ---------------------------
+; $84   Character - 6        
         EQUB    $EE,$88,$88,$EE,$AA,$AA,$EE,$00
+; $85   Character - 7        
         EQUB    $EE,$22,$22,$22,$22,$22,$22,$00
+; $86   Character - 8        
         EQUB    $EE,$AA,$AA,$EE,$AA,$AA,$EE,$00
+; $87   Character - 9        
         EQUB    $EE,$AA,$AA,$EE,$22,$22,$22,$00
+; $88   Character - A        
         EQUB    $44,$AA,$AA,$EE,$AA,$AA,$AA,$00
+; $89   Character - B        
         EQUB    $CC,$AA,$AA,$CC,$AA,$AA,$CC,$00
+; $8A   Character - C        
         EQUB    $44,$AA,$88,$88,$88,$AA,$44,$00
+; $8B   Character - D        
         EQUB    $CC,$AA,$AA,$AA,$AA,$AA,$CC,$00
+; $8C   Character - E        
         EQUB    $EE,$88,$88,$CC,$88,$88,$EE,$00
+; $8D   Character - F        
         EQUB    $EE,$88,$88,$CC,$88,$88,$88,$00
+; $8E   Character - G        
         EQUB    $44,$AA,$88,$88,$AA,$AA,$66,$00
+; $8F   Character - H        
         EQUB    $AA,$AA,$AA,$EE,$AA,$AA,$AA,$00
+; $90   Character - I        
         EQUB    $EE,$44,$44,$44,$44,$44,$EE,$00
+; $91   Character - J        
         EQUB    $EE,$44,$44,$44,$44,$44,$88,$00
+; $92   Character - K        
         EQUB    $88,$AA,$AA,$CC,$AA,$AA,$AA,$00
+; $93   Character - L        
         EQUB    $88,$88,$88,$88,$88,$88,$EE,$00
+; $94   Character - M        
         EQUB    $AA,$EE,$EE,$AA,$AA,$AA,$AA,$00
+; $95   Character - N        
         EQUB    $CC,$AA,$AA,$AA,$AA,$AA,$AA,$00
+; $96   Character - O        
         EQUB    $EE,$AA,$AA,$AA,$AA,$AA,$EE,$00
+; $97   Character - P        
         EQUB    $EE,$AA,$AA,$EE,$88,$88,$88,$00
+; $98   Character - Q        
         EQUB    $EE,$AA,$AA,$AA,$AA,$CC,$AA,$00
+; $99   Character - R        
         EQUB    $CC,$AA,$AA,$CC,$AA,$AA,$AA,$00
+; $9A   Character - S        
         EQUB    $44,$AA,$88,$44,$22,$AA,$44,$00
+; $9B   Character - T        
         EQUB    $EE,$44,$44,$44,$44,$44,$44,$00
+; $9C   Character - U        
         EQUB    $AA,$AA,$AA,$AA,$AA,$AA,$CC,$00
+; $9D   Character - V        
         EQUB    $AA,$AA,$AA,$AA,$AA,$44,$44,$00
+; $9E   Character - W        
         EQUB    $AA,$AA,$AA,$AA,$AA,$EE,$AA,$00
+; $9F   Character - X        
         EQUB    $AA,$AA,$44,$44,$44,$AA,$AA,$00
+; $A0   Character - Y        
         EQUB    $AA,$AA,$AA,$EE,$44,$44,$44,$00
+; $A1   Character - Z        
         EQUB    $EE,$22,$22,$44,$88,$88,$EE,$00
+; $A2   Character - a        
         EQUB    $00,$00,$CC,$22,$EE,$AA,$EE,$00
+; $A3   Character - b        
         EQUB    $88,$88,$CC,$AA,$AA,$AA,$CC,$00
+; $A4   Character - c        
         EQUB    $00,$00,$66,$88,$88,$88,$66,$00
+; $A5   Character - d        
         EQUB    $22,$22,$66,$AA,$AA,$AA,$66,$00
+; $A6   Character - e        
         EQUB    $00,$00,$44,$AA,$EE,$88,$66,$00
+; $A7   Character - f        
         EQUB    $22,$44,$44,$EE,$44,$44,$44,$00
+; $A8   Character - g        
         EQUB    $00,$00,$66,$AA,$AA,$66,$22,$CC
+; $A9   Character - h        
         EQUB    $88,$88,$CC,$AA,$AA,$AA,$AA,$00
+; $AA   Character - i        
         EQUB    $00,$44,$00,$CC,$44,$44,$EE,$00
+; $AB   Character - j        
         EQUB    $00,$44,$00,$44,$44,$44,$44,$88
+; $AC   Character - k        
         EQUB    $88,$88,$AA,$AA,$CC,$AA,$AA,$00
+; $AD   Character - l        
         EQUB    $44,$44,$44,$44,$44,$44,$66,$00
+; $AE   Character - m        
         EQUB    $00,$00,$AA,$EE,$EE,$AA,$AA,$00
+; $AF   Character - n        
         EQUB    $00,$00,$CC,$AA,$AA,$AA,$AA,$00
+; $B0   Character - o        
         EQUB    $00,$00,$44,$AA,$AA,$AA,$44,$00
+; $B1   Character - p        
         EQUB    $00,$00,$CC,$AA,$AA,$CC,$88,$88
+; $B2   Character - q        
         EQUB    $00,$00,$66,$AA,$AA,$66,$22,$22
+; $B3   Character - r        
         EQUB    $00,$00,$66,$88,$88,$88,$88,$00
+; $B4   Character - s        
         EQUB    $00,$00,$66,$88,$44,$22,$CC,$00
+; $B5   Character - t        
         EQUB    $00,$88,$88,$CC,$88,$88,$66,$00
+; $B6   Character - u        
         EQUB    $00,$00,$AA,$AA,$AA,$AA,$CC,$00
+; $B7   Character - v        
         EQUB    $00,$00,$AA,$AA,$AA,$44,$44,$00
+; $B8   Character - w        
         EQUB    $00,$00,$AA,$AA,$EE,$EE,$AA,$00
+; $B9   Character - x        
         EQUB    $00,$00,$AA,$AA,$44,$AA,$AA,$00
+; $BA   Character - y        
         EQUB    $00,$00,$AA,$AA,$AA,$66,$22,$EE
+; $BB   Character - z        
         EQUB    $00,$00,$EE,$22,$44,$88,$EE,$00
+; $BC   Character - !        
         EQUB    $44,$44,$44,$44,$44,$00,$44,$00
+; ---------------------------          
+; $BD   Character - Safe        
         EQUB    $60,$F6,$F6,$F6,$F6,$F6,$F6,$60
+; $BE   Character - Key        
         EQUB    $06,$0F,$0F,$69,$69,$0F,$0F,$06
+; $BF   Character - Egg        
         EQUB    $60,$60,$60,$F0,$F0,$F0,$F0,$60
+; $C0   Character - Rock        
         EQUB    $06,$4F,$0D,$2F,$5F,$87,$4B,$06
+; ---------------------------        
+; $C1   Character - :  
         EQUB    $00,$00,$44,$44,$00,$44,$44,$00
+; $C2   Character - .        
         EQUB    $00,$00,$00,$00,$00,$44,$44,$00
+; ---------------------------
+; $C3   Character - Diamond
         EQUB    $10,$30,$50,$B0,$D0,$A0,$C0,$80
+; ---------------------------       
+; $C4   Character - [ 
         EQUB    $EE,$88,$88,$88,$88,$88,$EE,$00
+; $C5   Character - ]
         EQUB    $EE,$22,$22,$22,$22,$22,$EE,$00
+; $C6   Character - =        
         EQUB    $00,$00,$EE,$00,$EE,$00,$00,$00
+; $C7   Character = *        
         EQUB    $00,$AA,$44,$EE,$44,$AA,$00,$00
 
 ; $3600 - Main character sprites
@@ -455,48 +684,56 @@
         EQUB    $0C,$0E,$0E,$0E,$0C,$0C,$08,$00
 
 ; $3B00 - Repton Standing - head
+.sprite_repton_standing
         EQUB    $77,$DD,$A8,$A8,$DD,$76,$33,$10
         EQUB    $EE,$BB,$51,$51,$BB,$E6,$CC,$80
         EQUB    $00,$00,$00,$00,$00,$00,$00,$00
         EQUB    $00,$00,$00,$00,$00,$00,$00,$00
 
 ; $3B20 - Repton Standing looking right - head
+.sprite_repton_standing_looking_r
         EQUB    $00,$11,$33,$33,$33,$11,$00,$00
         EQUB    $FF,$CC,$DC,$DC,$EE,$FF,$FF,$C0
         EQUB    $88,$CC,$44,$44,$44,$CC,$88,$00
         EQUB    $11,$33,$22,$22,$22,$33,$11,$00
 
 ; $3B40 - Repton Standing looking left - head
+.sprite_repton_standing_looking_l
         EQUB    $FF,$33,$B3,$B3,$77,$FF,$FF,$30
         EQUB    $00,$88,$CC,$CC,$CC,$88,$00,$00
         EQUB    $00,$00,$00,$00,$00,$00,$00,$00
         EQUB    $00,$00,$00,$80,$88,$88,$CC,$CC
 
 ; $3B60 - Monster left hand up - head
+.sprite_monster_left_hand_up
         EQUB    $77,$FC,$EC,$EC,$FF,$FD,$FE,$77
         EQUB    $FF,$F9,$D9,$D9,$F7,$FD,$F3,$FF
         EQUB    $00,$88,$88,$88,$88,$88,$88,$00
         EQUB    $00,$11,$11,$11,$11,$11,$11,$00
 
 ; $3B80 - Monster right hand up - head
+.sprite_monster_right_hand_up
         EQUB    $FF,$F9,$B9,$B9,$FE,$FB,$FC,$FF
         EQUB    $EE,$F3,$73,$73,$FF,$FB,$F7,$EE
         EQUB    $00,$00,$00,$10,$11,$11,$33,$33
         EQUB    $00,$00,$00,$11,$22,$66,$00,$54
 
 ; $3BA0 - Big explosion - top
+.sprite_explosion_big
         EQUB    $22,$AA,$01,$8A,$41,$1C,$83,$14
         EQUB    $88,$8D,$66,$44,$54,$46,$40,$22
         EQUB    $00,$00,$88,$04,$00,$AA,$11,$88
         EQUB    $00,$00,$00,$00,$00,$11,$00,$11
 
 ; $3BC0 - Medium explosion - top
+.sprite_explosion_medium
         EQUB    $00,$00,$11,$02,$CD,$33,$8B,$14
         EQUB    $00,$00,$66,$44,$55,$66,$44,$22
         EQUB    $00,$00,$00,$00,$00,$88,$00,$CC
         EQUB    $00,$00,$00,$00,$00,$00,$00,$11
 
 ; $3BE0 - Small explosion - top
+.sprite_explosion_small
         EQUB    $00,$00,$00,$00,$01,$77,$8B,$15
         EQUB    $00,$00,$00,$00,$44,$66,$44,$22
         EQUB    $00,$00,$00,$00,$00,$00,$00,$88

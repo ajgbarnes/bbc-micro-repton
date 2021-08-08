@@ -2539,10 +2539,10 @@ INCLUDE "repton-third-chord-note.asm"
         ASL     A
         ROL     zp_tile_load_address_msb
         CLC
-        ADC     #LO(data_repton_sprites)
+        ADC     #LO(data_tiles)
         STA     zp_tile_load_address_lsb
         LDA     zp_tile_load_address_msb
-        ADC     #HI(data_repton_sprites)
+        ADC     #HI(data_tiles)
         STA     zp_tile_load_address_msb
 
         ; Copy the tile to the screen (each tile is 8 bytes)
@@ -2592,10 +2592,10 @@ INCLUDE "repton-third-chord-note.asm"
         ASL     A
         ROL     zp_tile_load_address_msb
         CLC
-        ADC     #LO(data_repton_sprites)
+        ADC     #LO(data_tiles)
         STA     zp_tile_load_address_lsb
         LDA     zp_tile_load_address_msb
-        ADC     #HI(data_repton_sprites)
+        ADC     #HI(data_tiles)
         STA     zp_tile_load_address_msb
 
         ; Copy the tile to the screen (each tile is 8 bytes)
