@@ -318,10 +318,21 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;...
 ;0E36
-; TODO 
-; Lookup table of a moving bit 
-; e.g. 1, 2, 4, 8, 16, 32, 64, 128
-; 00000001, 00000010, 00000100 ..... 10000000
+.data_map_object_required_bit_mask
+; This table is used to look up the required bit
+; when decompressing an object from the stored
+; maps 
+; 
+; Bit Bit mask
+; --- --------
+;  0  00000001 ($01)
+;  1  00000010 ($02)
+;  2  00000100 ($04)
+;  3  00001000 ($08)
+;  4  00010000 ($10)
+;  5  00100000 ($20)
+;  6  01000000 ($40)
+;  7  10000000 ($80)
         EQUB    $01,$02,$04,$08,$10,$20,$40,$80      
 ;... 
 
@@ -2642,90 +2653,296 @@ INCLUDE "repton-third-chord-note.asm"
 }
 ;...
 
-.L1E4C
-        STX     zp_screen_password_lookup_lsb
-        STY     zp_screen_password_lookup_msb
-        LSR     zp_screen_password_lookup_msb
-        ROR     zp_screen_password_lookup_lsb
-        LSR     zp_screen_password_lookup_msb
-        ROR     zp_screen_password_lookup_lsb
-        LSR     zp_screen_password_lookup_msb
-        ROR     zp_screen_password_lookup_lsb
-        LDA     zp_screen_password_lookup_msb
+;L1E4C
+.fn_get_nth_bit_from_memory
+        ; Returns the nth bit from memory from
+        ; the map data that starts at $4200 using
+        ; the relative bit offset that is passed in
+        ; 
+        ; On exit
+        ;     A - $00 - bit not set
+        ;     A - $FF - bit set to one
+        ;
+        ; The values in the follow locations
+        ; contain the YXth bit that needs to be
+        ; retrieved
+        ;
+        ;    zp_object_index_lsb_cache - 0072
+        ;    zp_object_index_msb_cache - 0073
+        ;
+        ; This routine takes the relative bit offset and 
+        ; works out which relative byte offset containst
+        ; that bit (by dividing it by 8)
+        ;
+        ; It then works out where in memory that is by
+        ; adding $4200
+        ;
+        ; Byte address = (relative bit offset / 8) + $4200
+        ;
+        STX     zp_starting_bit_offset_lsb_cache
+        STY     zp_starting_bit_offset_msb_cache
+
+        ; To calculate which byte this is in,
+        ; divide the number of bits by 8 and throw
+        ; away the remainder
+        ;
+        ; Relative byte offset = nth bit / 8
+        LSR     zp_starting_bit_offset_msb_cache
+        ROR     zp_starting_bit_offset_lsb_cache
+        LSR     zp_starting_bit_offset_msb_cache
+        ROR     zp_starting_bit_offset_lsb_cache
+        LSR     zp_starting_bit_offset_msb_cache
+        ROR     zp_starting_bit_offset_lsb_cache
+
+        ; Load the relative byte offset
+        LDA     zp_starting_bit_offset_msb_cache
+
+        ; Add $4200 to it (all compressed map info
+        ; starts at this address)
         CLC
         ADC     #$42
-        STA     zp_screen_password_lookup_msb
+        STA     zp_starting_bit_offset_msb_cache
+
+
         LDY     #$00
+
+        ; Work out which bit from that byte is 
+        ; required for this nth bit but masking
+        ; to only the bottom three bits (this
+        ; gives a value between 0 and 7)
         TXA
         AND     #$07
         TAX
-        LDA     L0E36,X
+
+        ; Look up the bit mask using X from a table for the
+        ; to be able to retrieve the required bit
+        ;
+        ; Bit Bit mask
+        ; --- --------
+        ;  0  00000001 ($01)
+        ;  1  00000010 ($02)
+        ;  2  00000100 ($04)
+        ;  3  00001000 ($08)
+        ;  4  00010000 ($10)
+        ;  5  00100000 ($20)
+        ;  6  01000000 ($40)
+        ;  7  10000000 ($80)
+        LDA     data_map_object_required_bit_mask,X
         AND     (zp_screen_password_lookup_lsb),Y
 
-        ; If the value is zero then return zero
+        ; If the value of the bit is zero then return zero
         CMP     #$00
-        BEQ     L1E74
+        BEQ     end_get_nth_bit_from_memory
 
-        ; Otherwise return $FF
+        ; Otherwise return $FF to indicate bit is set
         LDA     #$FF
-.L1E74
+;L1E74
+.end_get_nth_bit_from_memory
         RTS
 
-.L1E75
-        ; Reset the password lookup index now we 
-        ; have the password matched to a screen
-        ; 72
-        STX     zp_screen_password_lookup_index
-        STY     L0073
-        STX     L0074
-        STY     L0075
+;L1E75
+.fn_get_next_map_object
+        ; X and Y get the nth object for the current map
+        ;    X is 0 to 255
+        ;    Y is 0 to 3 (multiplied by screen number)
+        ;
+        ; Together as YX they represent the nth serialised objet 
+        ; to retrieve for example for screen A (0):
+        ;
+        ;   X  Y    YX  nth
+        ;  -- --  ---- ----
+        ;  00 00  0000    0
+        ;  01 00  0001    1
+        ;  02 00  0002    2
+        ;  ...
+        ;  FF 00  00FF  255
+        ;  00 01  0100  256
+        ;  01 01  0101  257
+        ;  02 01  0102  258
+        ;  ...
+        ;  FF 01  01FF  511
+        ;  ...
+        ;  00 03  0300  768
+        ;  ...
+        ;  FF 03  03FF 1023   <-- last value to look up as
+        ;                         each map is 1024 objects
+        ;
+        ; This retrieves 4 * 256 = 1024 objects of the current
+        ; map
+        ;
+        ; The map is compressed in that 5 bits ar used to represent
+        ; each object so objects can have a value of $00 to $1F. Spare
+        ; bits are used for the next object so
+        ;
+        ; Looking at Screen A, which starts at &4200 the first
+        ; 5 bytes contain 8 object defintions (from &4200 to &4204)
+        ; with the rest following after (&4200++)
+        ;
+        ;             <-------------------Memory----------------------------
+        ; Address:      &4205    &4204    &4203    &4202    &4201   &4200
+        ;              -------- -------- -------- -------- -------- --------
+        ; Byte:           &38      &B5      &AD      &6B      &5A      &D6
+        ; Binary:      00111000 10110101 10101101 01101011 01011010 11010110
+        ;              --><---> <---><-- -><--->< ---><--- ><---><- --><--->
+        ; Object:           9     8    7     6     5    4     3     2    1
+        ; Obj value:       &18   &16  &16   &16   &16  &16   &16   &16  &16
+        ; Obj type:      Earth  BrickBrick Brick BrickBrick Brick BrickBrick
+        ; 
+        ; The starting bit offset is calculated from the YX and used to
+        ; retrieve five bits from that position - note that it is a relative
+        ; not absolute position that is calculated so e.g. if YX were $00
+        ; the starting bit offset would be $00
 
+        ; Put X and Y into the working variables
+        STX     zp_object_index_lsb
+        STY     zp_object_index_msb
+
+        ; Cache X and Y as they are required later
+        ; and are not changed
+        STX     zp_object_index_lsb_cache
+        STY     zp_object_index_lsb_cache
+
+        ; Reset nth object identifier - this will
+        ; contain the object code at the nth position
+        ; It has the bits rolled in from the left 
+        ; and then rolled down to the bottom bits when
+        ; five bits have been added
         LDA     #$00
-        STA     L0076
-        ; 72
-        ASL     zp_screen_password_lookup_index
-        ROL     L0073
-        ; 72
-        ASL     zp_screen_password_lookup_index
-        ROL     L0073
+        STA     zp_object_id
+
+        ; Calculate the starting bit offset from the start
+        ; of the map memory using:
+        ;
+        ;    Req'd bit = (YX * 4) + X + (Y * 256)
+        ;       or
+        ;    Req'd bit = (YX * 4) + X + (Y00)
+        ;
+        ; Which is really the same as:
+        ;
+        ;    Req'd bit = YX * 5
+        ;
+        ; But because it's hard to multiply in 6502, it's
+        ; calculated as:
+        ;
+        ;    Req'd bit = (YX * 4) + YX
+        ; 
+
+        ; Multiply YX by 4  (YX * 4)...
+        ASL     zp_object_index_lsb
+        ROL     zp_object_index_msb
+        ASL     zp_object_index_lsb
+        ROL     zp_object_index_msb
+
+        ; Add ... + X + ...
         CLC
-        ; 72
-        LDA     zp_screen_password_lookup_index
-        ADC     L0074
-        ; 72
-        STA     zp_screen_password_lookup_index
-        LDA     L0073
-        ADC     L0075
-        STA     L0073
-.L1E96
-        JSR     L1EAE
+        LDA     zp_object_index_lsb
+        ADC     zp_object_index_lsb_cache
+        STA     zp_object_index_lsb
 
-        JSR     L1EAE
+        ; Add ... + (Y00)
+        LDA     zp_object_index_msb
+        ADC     zp_object_index_msb_cache
+        STA     zp_object_index_msb
 
-        JSR     L1EAE
+        ; The relative starting bit offset is now stored in:
+        ;    zp_object_index_lsb
+        ;    zp_object_index_msb
 
-        JSR     L1EAE
+        ; fn_get_next_map_object_bit uses
+        ; the values in:
+        ;
+        ;    zp_object_index_lsb - 0072
+        ;    zp_object_index_msb - 0073
+        ;
+        ; Each call adds the next object bit to
+        ; by rolling it in from the left:
+        ;
+        ;    zp_object_id - 0076
+        ;
+        ; Until all 5 object bits have been 
+        ; retrieved
 
-        JSR     L1EAE
+        ; Get bit 1 for object - note that the 
+        ; routine will increment the relative
+        ; bit offset by one so updating:
+        ;    zp_object_index_lsb
+        ;    zp_object_index_msb
+        JSR     fn_get_next_map_object_bit
 
-        LSR     L0076
-        LSR     L0076
-        LSR     L0076
-        LDA     L0076
+        ; Get bit 2 for object - note that the 
+        ; routine will increment the relative
+        ; bit offset by one so updating:
+        ;    zp_object_index_lsb
+        ;    zp_object_index_msb
+        JSR     fn_get_next_map_object_bit
+
+        ; Get bit 3 for object - note that the 
+        ; routine will increment the relative
+        ; bit offset by one so updating:
+        ;    zp_object_index_lsb
+        ;    zp_object_index_msb
+        JSR     fn_get_next_map_object_bit
+
+        ; Get bit 4 for object - note that the 
+        ; routine will increment the relative
+        ; bit offset by one so updating:
+        ;    zp_object_index_lsb
+        ;    zp_object_index_msb
+        JSR     fn_get_next_map_object_bit
+
+        ; Get bit 5 for object - note that the 
+        ; routine will increment the relative
+        ; bit offset by one so updating:
+        ;    zp_object_index_lsb
+        ;    zp_object_index_msb
+        JSR     fn_get_next_map_object_bit
+
+        ; Move the bits from high positions to low 
+        ; so e.g. 10101000 becaomes 00010101 so the
+        ; object number is aligned to the lowest 5 bits
+        ; and therefore in the range $00 - $1F
+        LSR     zp_object_id
+        LSR     zp_object_id
+        LSR     zp_object_id
+
+        ; Set the accumulator as the object id
+        ; as the code after this will use it to 
+        ; write to the map cache at $0400
+        LDA     zp_object_id
         RTS
 
-.L1EAE
-        LDX     zp_screen_password_lookup_index
-        LDY     L0073
-        JSR     L1E4C
+;L1EAE
+.fn_get_next_map_object_bit
+        ;0072
+        ; The values in the follow locations
+        ; contain the YXth bit that needs to be
+        ; retrieved
+        ;
+        ;    zp_object_index_lsb - 0072
+        ;    zp_object_index_msb - 0073
+        LDX     zp_object_index_lsb
+        LDY     zp_object_index_msb
+        JSR     fn_get_nth_bit_from_memory
 
+        ; Roll the bit at the nth position into the object id
+        ;
+        ; This is performed for 5 bits by the caller
+        ; and the previous subroutine returns A is $00
+        ; or A is $FF to indicate if the bit is 0 or 1
+        ; so the ASL doesn't or does set the carry flag
+        ; that gets ROR'd into the MSB for the object_id
         ASL     A
-        ROR     L0076
-        INC     zp_screen_password_lookup_index
-        BNE     L1EBE
+        ROR     zp_object_id
 
-        INC     L0073
-.L1EBE
+        ; Increment the relative bit offset so the caller
+        ; doesn't need to do it
+        INC     zp_object_index_lsb
+        BNE     end_decode_map_object
+
+        ; If the LSB carried then add 1 to the MSB
+        INC     zp_object_index_msb
+;L1EBE
+.end_decode_map_object
         RTS
 ;...
 ;1EBF
@@ -2735,28 +2952,41 @@ INCLUDE "repton-third-chord-note.asm"
         JSR     fn_reset_start_and_started_on_screen
 
         ; A at this point will contain the current screen
-        ; Multiply by the level by 4
+        ;
+        ; Multiply the current screen by 4
         ASL     A
         ASL     A
 
         ; Store in 78   
-        STA     L0078
+        STA     zp_nth_object_index_msb
 
         ; Reset 77 80 and the number of 
         ; diamonds left
         LDA     #$00
-        STA     L0077
-        STA     ; Clear the current map cache location
+
+        ; 
+        STA     zp_nth_object_index_lsb
+
+        ; Counter used to loop 256 times 
+        STA     zp_decode_map_counter_lsb
+
+        ; Reset the number of diamonds left to
+        ; collect to zero - they will be counted as
+        ; the map is unpacked
         STA     var_number_diamonds_left
 
-        ; Dunno, some counter... that goes from 4 to 8
+        ; Counter used to loop 4 times on top of the 256 times
+        ; to get all 1024 (4 x 256) objects
         LDA     #$04
-        STA     zp_current_map_cache_msb
-.L1ED3
-        ; Decode the compressed map at this (xpos,ypos)
-        LDX     L0077
-        LDY     L0078
-        JSR     L1E75
+        STA     zp_decode_map_counter_msb
+;L1ED3
+.get_and_decode_nth_map_object
+        ; Get the nth object from the encoded (compressed)
+        ; map so it can be copied into the current map
+        ; cache
+        LDX     zp_nth_object_index_lsb
+        LDY     zp_nth_object_index_msb
+        JSR     fn_get_next_map_object
 
         ; Set the current screen map cache (0400-07FF)
         ; to tbe the looked up object
@@ -2775,15 +3005,72 @@ INCLUDE "repton-third-chord-note.asm"
         ; If the current object is a Safe ($17)
         ; increment the number of diamonds to collect
         CMP     #$17
-        BNE     L1EEC
+        BNE     skip_number_diamonds_left_increment
 
         ; It's a safe so increment
-        INC     var_number_diamonds_left        
+        INC     var_number_diamonds_left
+
+;L1EEC
+.skip_number_diamonds_left_increment
+        ; Increment to get the next map object
+        ; if the LSB carries than add 1 to the MSB
+        INC     zp_nth_object_index_lsb
+        BNE     skip_nth_object_index_msb_increment
+
+        ; Increment the MSB as the LSB > 255
+        INC     zp_nth_object_index_msb
+;L1EF2
+.skip_nth_object_index_msb_increment
+        ; A map contains 1024 object ids - these are
+        ; retrieved by iterating over 4 * 256 object ids
+        ; 
+        ; The zp_decode_map_counter_lsb loops 0-255 inclusive
+        ; The zp_decode_map_counter_msb loops 4-7 inclusive
+        ;
+        ; Get and decode the current 256 object ids and 
+        ; copy into $0400-$04FF - if all 256 have been
+        ; retrieved then increment the MSB
+        INC     zp_decode_map_counter_lsb
+        BNE     L1EF8
+
+        ; Increment the MSB
+        INC     zp_decode_map_counter_msb
+;L1EF8
+.skip_decode_map_counter_msb_increment
+        ; Have all 1024 map object ids been retrieved
+        ; and copied into the working cache?
+        ;
+        ; Have 4*256 iterations been performed?
+        ; (Remember starts at $04)
+        LDA     zp_decode_map_counter_msb
+        CMP     #$08
+        ; Not all have been retrieved so loop back
+        ; and get the rest
+        BNE     get_and_decode_nth_map_object
+
+        ; Reset $0980-$09FF to zero
+        LDX     #$10
+        ; TODO give this label a better name
+;L1F00
+.reset_cache
+        ; Set current byte to zero
+        LDA     #$00
+        ; TODO WHAT IS HELD HERE
+        STA     L0970,X
+        ; Move to next byte and loop
+        ; back if more to reset
+        INX
+        BPL     reset_cache
+
+        RTS
+
 ;...
 .L1F09
         LDA     #$00
         STA     L0903
         STA     L0904
+
+        ;
         LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$0E
@@ -3195,6 +3482,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     zp_visible_screen_top_left_xpos
         CLC
 
+        ; TODO Check this
         ; Add 2 because the starting top left is 
         ; (2,2) to show half a sprite on the top,
         ; left, right and bottom margins - so to 
