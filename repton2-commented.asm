@@ -81,7 +81,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Set to channel 1 and flush the sound channel
         ; if a note is already playing
         LDA     #$11
-        STA     zp_sound_block_channel_lsb
+        STA     zp_music_block_channel_lsb
 
         ; Get the next note sequence number to play
         LDX     var_note_sequence_number
@@ -109,19 +109,19 @@ INCLUDE "repton-third-chord-note.asm"
 ;0D3B
 .fn_set_sound_block_and_play_sound
         ; Set the pitch to the value passed in A
-        STA     zp_sound_block_pitch_lsb
+        STA     zp_music_block_pitch_lsb
         LDA     #$00
 
         ; Set all MSBs to zero
-        STA     zp_sound_block_channel_msb
-        STA     zp_sound_block_amplitude_msb
-        STA     zp_sound_block_pitch_msb
-        STA     zp_sound_block_duration_msb
+        STA     zp_music_block_channel_msb
+        STA     zp_music_block_amplitude_msb
+        STA     zp_music_block_pitch_msb
+        STA     zp_music_block_duration_msb
 
         ; Set the amplitude and duration to 1
         LDA     #$01
-        STA     zp_sound_block_amplitude_lsb
-        STA     zp_sound_block_duration_lsb
+        STA     zp_music_block_amplitude_lsb
+        STA     zp_music_block_duration_lsb
 
         ; Sounds parameter block is stored at $0600
         ; Set XY and call fn to play the sound
@@ -187,7 +187,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; If the sound pitch is zero skip playing
         ; the sound
-        LDA     zp_sound_block_pitch_lsb
+        LDA     zp_music_block_pitch_lsb
         BEQ     skip_play_sound
 
         ; OSWORD &07
@@ -522,14 +522,91 @@ INCLUDE "repton-third-chord-note.asm"
         ; this sub-routine
         RTS
 ;...
+;L1058
+.end_play_intro_music
+        ; Restore A the amplitude
+        PLA
+        RTS
+
+;L105A
+.fn_play_intro_music
+        ; On entry:
+        ; $0000 contains the required sound channel
+        ;     A contains the amplitude
+        ;     X contains the pitch (note)
+        ;     Y contains the duration (in 1/20ths of a second)
+
+        ; Store the amplitude temporarily on the stack
+        ; whilst the sound status is switched off
+        PHA
+
+        ; Check to see if Sound is switched off
+        ; (not music weirdly - bug?) and don't
+        ; play the music if sound is off
+        LDA     var_sound_status
+        BEQ     end_play_intro_music
+
+        ; Restore the amplitude
+        PLA
+
+        ; Store the amplitude in the
+        ; sound parameter block
+        STA     zp_sound_block_channel_msb 
+
+        ; Store the pitch (note) in the
+        ; sound parameter block
+        STX     zp_sound_block_pitch_lsb
+
+        ; Store the duration in the
+        ; sound parameter block        
+        STY     zp_sound_block_duration_lsb
+
+        ; Set the MSBs to zero for duration, pitch
+        ; and amplitude
+        LDX     #$00
+        STX     zp_sound_block_duration_msb
+        STX     zp_sound_block_pitch_msb
+        STX     zp_sound_block_channel_msb
+
+        ; Sound channel is passed in $0000 
+        ; so load it and set it in the sound
+        ; parameter block
+        LDX     zp_required_sound_channel
+        STX     zp_sound_block_channel_lsb
+
+        ; vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+        ; Setting X here doesn't do anything
+        ; it seems as it's immediately set
+        ; in the next block under play_sound
+        ; to the zero page location of the
+        ; sound block
+        LDX     #$FF
+
+        ; This DOES do something as the 
+        ; amplitude is set in play_sound
+        ; to the sound parameter block location
+        TAY
+
+        ; Jump to play_sound if amplitude
+        ; is negative (N set during TAY)
+        BMI     play_sound
+
+        ; Does nothing
+        LDX     #$00
+        ; ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ; 107A
-.fn_play_sound
-        ; OSWORD &07
+.play_sound
+        ; Store Y in the sound block parameter
+        ; MSB for amplitude - doesn't seem to 
+        ; do anything though... maybe this
+        ; should have been STX? Bug?
+        STY     zp_sound_block_amplitude_msb
+
+        ; OSWORD &07        
         ; Play sound from parameters at $0001
-        STY     L0004
-        LDX     #$01
-        LDY     #$00
+        LDX     #LO(zp_sound_block_channel_lsb)
+        LDY     #HI(zp_sound_block_channel_lsb)
         LDA     #$07
         JMP     OSWORD
 
@@ -1723,7 +1800,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$9D
         JSR     fn_read_key
 
-        ; If pressed go to the end if space was pressed
+        ; If space was pressed go to the end
         BNE     L195A
 
         ; Check to see if the escape key was pressed
@@ -3077,12 +3154,14 @@ INCLUDE "repton-third-chord-note.asm"
         LSR     A
         LSR     A
         TAX
+
         LDA     zp_visible_screen_top_left_ypos
         CLC
         ADC     #$0D
         LSR     A
         LSR     A
         TAY
+
         JSR     fn_lookup_screen_object_for_x_y
 
         ; Is it Earth type 2
@@ -3713,18 +3792,124 @@ L20C8 = L20C6+2
 ;...
 
 .L21D0
+        ; Reset the sound note index to the
+        ; start of the tune
         LDA     #$00
-        STA     zp_screen_write_total_byte_counter
-.L21D4
-        LDY     zp_screen_write_total_byte_counter
-        LDX     L2240,Y
-        BEQ     L21E6
+        STA     zp_sound_note_index
+;L21D4
+.play_next_intro_chord
+        ; Load the index into Y as it'll
+        ; be used to retrieve the current note
+        LDY     zp_sound_note_index
 
+        ; -------------------------------------
+        ; Play SOUND channel 1 note
+        ; -------------------------------------
+        LDX     music_intro_channel_1,Y
+        ; If the pitch is zero skip the note
+        BEQ     play_intro_music_channel_2
+
+        ; Set the sound channel to 1 ($x1) with 
+        ; the immediate flush of the sound channel
+        ; to play the note ($1x)
         LDA     #$11
-        STA     zp_screen_write_address_lsb
+        STA     zp_required_sound_channel
+
+        ; Set the duration to 1 (1/20th of a second)
         LDY     #$01
-        LDA     #$01` 
-        JSR     L105A
+
+        ; Set the amplitude to 01 (use envelope 1)
+        LDA     #$01
+
+        ; Play the current note 
+        ; $0000 - set to the required sound channel
+        ; A     - set to the amplitude
+        ; X     - set to the pitch (note)
+        ; Y     - set to the duration
+        JSR     fn_play_intro_music
+
+;21E6
+.play_intro_music_channel_2
+        ; -------------------------------------
+        ; Play SOUND channel 2 note
+        ; -------------------------------------
+        ; Load the index into Y as it'll
+        ; be used to retrieve the current note
+        LDY     zp_sound_note_index
+        LDX     music_intro_channel_2,Y
+        BEQ     play_intro_music_channel_3
+
+        ; Set the sound channel to 2 ($x2) with 
+        ; the immediate flush of the sound channel
+        ; to play the note ($1x)
+        LDA     #$12
+        STA     zp_required_sound_channel
+
+        ; Set the duration to 1 (1/20th of a second)
+        LDY     #$01
+
+        ; Set the amplitude to 01 (use envelope 1)
+        LDA     #$01
+
+        ; Play the current note 
+        ; $0000 - set to the required sound channel
+        ; A     - set to the amplitude
+        ; X     - set to the pitch (note)
+        ; Y     - set to the duration        
+        JSR     fn_play_intro_music
+
+;21F8
+.play_intro_music_channel_3
+        ; -------------------------------------
+        ; Play SOUND channel 3 note
+        ; -------------------------------------
+        ; Load the index into Y as it'll
+        ; be used to retrieve the current note
+        LDY     zp_sound_note_index
+        LDX     music_intro_channel_3,Y
+        BEQ     wait_for_80ms
+
+        ; Set the sound channel to 3 ($x3) with 
+        ; the immediate flush of the sound channel
+        ; to play the note ($1x)
+        LDA     #$13
+        STA     zp_required_sound_channel
+
+        ; Set the duration to 1 (1/20th of a second)
+        LDY     #$01
+
+        ; Set the amplitude to 01 (use envelope 1)
+        LDA     #$01
+
+        ; Play the current note 
+        ; $0000 - set to the required sound channel
+        ; A     - set to the amplitude
+        ; X     - set to the pitch (note)
+        ; Y     - set to the duration      
+        JSR     fn_play_intro_music
+
+;220A
+.wait_for_80ms
+        ; Wait for (4 * 20ms) 80 ms
+        LDX     #$04
+;220C
+.loop_wait_for_80ms
+        ; Wait for 20ms
+        JSR     fn_wait_for_vertical_sync
+        ; Loop back and wait another 20 ms
+        ; if the index is still non-zero
+        DEX
+        BNE     loop_wait_for_80ms
+
+        ; Move to the next notes to play
+        INC     zp_sound_note_index
+        LDA     zp_sound_note_index
+
+        ; There are 52 ($34) notes to play
+        ; for the intro tune - loop if not
+        ; all played yet
+        CMP     #$34
+        BNE     play_next_intro_chord     
 ;...
 
 
@@ -3738,9 +3923,9 @@ L20C8 = L20C6+2
         ; choose this string for that line
         JMP     fn_set_press_escape_lsb
 ;...
-
-
-;L2300
+;2240
+INCLUDE "repton-music-intro-notes.asm"
+;2300
 .fn_sort_and_display_scores
         ; Set the screen number to the high value
         LDA     #$FF
