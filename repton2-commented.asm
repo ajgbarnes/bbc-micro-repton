@@ -282,7 +282,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Spare Byte - 1
         EQUB    $00
 
-.L0DD0
+;0DD0
 .fn_check_out_of_time
         ; Processor is in BCD mode at this point
         ; So if the time remaining MSB has gone
@@ -296,7 +296,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; and return
         BNE     fn_check_out_of_time
 
-        ; Out of time
+        ; Out of time...
 
         ; Switch off binary coded decimal mode
         CLD
@@ -1319,6 +1319,44 @@ INCLUDE "repton-third-chord-note.asm"
         BNE     loop_wait_for_vsync_fn
 
         RTS
+
+;L16EB
+.fn_decrement_remaining_time
+        ; Set the processor into BCD mode
+        ; for time remaining manipulation
+        SED
+
+        ; Subtract one from the LSB of
+        ; time remaining
+        LDA     var_remaining_time_lsb
+        SEC
+        SBC     #$01
+        STA     var_remaining_time_lsb
+
+        ; If the LSB went from 00 to 99
+        ; then need to decrement the MSB
+        CMP     #$99
+        BNE     end_decrement_remaining_time
+
+        ; Subtract one from the MSB of
+        ; time remaining
+        LDA     var_remaining_time_msb
+        SEC
+        SBC     #$01
+        STA     var_remaining_time_msb
+
+        ; Check to see if the player is out of 
+        ; time - happens when the MSB goes from
+        ; 00 to 99 
+        JSR     fn_check_out_of_time
+
+        ; Spare byte - 1
+        NOP
+;1706
+.end_decrement_remaining_time
+        ; Switch off binary coded decimal mode
+        CLD
+        RTS        
 ;...
 
 ;L1708
@@ -4065,7 +4103,8 @@ INCLUDE "repton-third-chord-note.asm"
         ; pressed for the player to kill repton
         JSR     fn_check_escape_key
 
-        JSR     L16EB
+        ; Decrement the remaining time by 1
+        JSR     fn_decrement_remaining_time
 
         ; Increment the main loop counter
         ; Used for standing idle animation
