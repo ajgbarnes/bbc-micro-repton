@@ -27,7 +27,7 @@ INCLUDE "repton-second-chord-note.asm"
 ;0C00
 INCLUDE "repton-third-chord-note.asm"
 ;0D00
-; Junk byte?
+; Spare byte?
         EQUB    $00
 ;L0D01
 .end_event_handler_IRQ2V
@@ -129,25 +129,28 @@ INCLUDE "repton-third-chord-note.asm"
         LDY     #$00
         JMP     fn_play_game_sound
 
-        ; Junk bytes
+        ; Spare bytes
         NOP
         NOP
         
-        ; Seems to be called when going back to the game
-        ; before Repton is drawn on the screen
 ;0D56
 .fn_draw_repton
+        ; Called when going back to the game
+        ; before Repton is drawn on the screen
+
+        ; Draw repton
         JSR     fn_lookup_repton_sprite_and_display
 
-
-;0D59
         ; Set the EVENTV / EVNTV handling routine
         ; to $0D90
+        ; Set the MSB
         LDA     #HI(fn_enable_timer_2)
         STA     eventv_msb_vector
-;0d5e        
+
+        ; Set the LSB
         LDA     #LO(fn_enable_timer_2)
         STA     eventv_lsb_vector
+
         ; OSBYTE &0D 
         ; Enable VSYNC event ($04) - event is generated
         ; 50 times per second at the start of vertical
@@ -156,14 +159,20 @@ INCLUDE "repton-third-chord-note.asm"
         LDX     #$04
         JMP     OSBYTE
 
-;0d6a
+;0D6A
 .fn_disable_vsync_event
         ; TODO Not sure what this does yet
         LDA     #$0E
-        STA     zp_screen_password_lookup_index
+        ; 72
+        STA     zp_screen_dissolve_iterations
 
-        ; Stop maskable interrupts
+        ; Allow maskable interrupts
         CLI
+
+        ; Continues below
+
+;0D6F
+.fn_disable_vsync_event_only
         ; OSBYTE &0D 
         ; Disable VSYNC event ($04)
         LDA     #$0D
@@ -178,6 +187,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$FF
         STA     var_note_sequence_number
         RTS
+
 ;L0D7F
 .fn_play_game_sound
         ; Check to see if both sound and music are on
@@ -252,8 +262,106 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     L00FC
         RTI        
 
-;spare bytes
+        ; Spare bytes - 2
         EQUB    $00,$00
+
+.L0DB4
+        JSR     fn_play_music_sound
+
+        JMP     fn_disable_vsync_event_only
+
+        JSR     fn_calc_screen_address_from_x_y_pos
+
+        JMP     fn_wait_for_vertical_sync
+
+;0DC0
+.text_out_of_time
+        EQUS    " Out of time. "
+        EQUB    $0D
+        
+        ; Spare Byte - 1
+        EQUB    $00
+
+.L0DD0
+.fn_check_out_of_time
+        ; Processor is in BCD mode at this point
+        ; So if the time remaining MSB has gone
+        ; from 00 to 99 (i.e. 00 - 1 = 99 in BCD)
+        ; then time is up!
+
+        ; Check if time is up
+        CMP     #$99
+
+        ; If there is still time remaining then branch ahead
+        ; and return
+        BNE     fn_check_out_of_time
+
+        ; Out of time
+
+        ; Switch off binary coded decimal mode
+        CLD
+
+        ; Allow maskable interrupts
+        CLI
+
+        ; Clear the carry flag
+        CLC
+
+        ; Set the colour mask (to yellow and black)
+        LDA     #$F0
+        STA     zp_screen_colour_mask
+
+        ;-----------------------------------
+        ;  Out of time. 
+        ;-----------------------------------
+        ; String to write to the screen is 
+        ; stored at $0DC0
+        ; Set the LSB to the string
+        LDA     #LO(text_out_of_time)
+        STA     zp_string_to_display_lsb
+
+        ; Set the MSB to the string
+        LDA     #HI(text_out_of_time)
+        STA     zp_string_to_display_msb
+
+        ; Set the cursor position to (09,19)
+        LDX     #$09
+        LDY     #$13
+
+        ; Write the string to the screen
+        JSR     fn_write_string_to_screen
+
+        ; Dsiplay the message for 1.6 seconds
+        ; (80 * 20ms)
+        LDX     #$50
+;L0DEC
+.loop_wait_for_1600ms
+        ; Wait for 20 ms
+        JSR     fn_wait_for_vertical_sync
+
+        ; Continue to wait until the counter
+        ; reaches zero
+        DEX
+        BNE     loop_wait_for_1600ms
+
+        ; Kill repton 
+        JMP     fn_kill_repton
+
+;0DF5
+.fn_check_out_of_time
+        RTS
+
+        ; Spare bytes - 10
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP        
 
 ;...
 
@@ -1213,7 +1321,8 @@ INCLUDE "repton-third-chord-note.asm"
         RTS
 ;...
 
-.L1708
+;L1708
+.fn_kill_repton
         ; Switch off Binary Coded Decimal mode
         CLD
 
@@ -1383,7 +1492,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Reset the palette, music sequence and vsync
         JMP     fn_reset_palette_music_and_vsync
 
-        ; Junk Bytes - 2 
+        ; Spare Bytes - 2 
         NOP 
         NOP
 
@@ -3459,7 +3568,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDX     #$FF
         TXS
 
-        ; Junk bytes - 2
+        ; Spare bytes - 2
         NOP
         NOP
 
@@ -3665,10 +3774,15 @@ INCLUDE "repton-third-chord-note.asm"
         ; branch        
         BNE     L2086
 
-        ; Junk bytes - 3
+        ; Spare bytes - 3
         NOP
         NOP
         NOP
+
+        ; Check if the player is trying to 
+        ; move repton and change the required
+        ; animation sprite for Repton if so
+        ; Also checks if repton is idle
         JSR     fn_check_repton_movement
 
 .L2086
@@ -3884,7 +3998,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$1F
         JSR     L121E
 
-        ; Junk byte -1
+        ; Spare byte -1
         NOP
 
 
@@ -3921,7 +4035,7 @@ INCLUDE "repton-third-chord-note.asm"
         JMP     L2005
 
 .L2138
-        ; Junk byte - 1
+        ; Spare byte - 1
         NOP
         JSR     L1588
 
@@ -3958,7 +4072,7 @@ INCLUDE "repton-third-chord-note.asm"
         INC     var_main_loop_counter
         JMP     main_game_loop
 
-        ; Junk bytes - 2
+        ; Spare bytes - 2
         EQUB    $00, $00
 ;L2158
 .fn_check_r_d_w_keys
@@ -4030,7 +4144,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; (or skip if it's a restart)
         JMP     fn_show_high_score_table
 
-        ; Junk bytes - 7
+        ; Spare bytes - 7
         NOP
         NOP
         NOP
@@ -4256,7 +4370,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Reset to default colours
         JSR     fn_reset_palette_to_default_game_colours
 
-        ; Junk bytes - 27
+        ; Spare bytes - 27
         NOP
         NOP
         NOP
@@ -4982,7 +5096,24 @@ INCLUDE "repton-music-intro-notes.asm"
 
         ; Play the short intro music and return
         JMP     fn_play_intro_music   
-;...
+
+;L266B
+.fn_set_start_screen_and_reset_game
+        ; Set the middle high score digits to whatever
+        ; is passed in A ($80)
+        STA     var_high_score_mlsb
+
+        ; Set A to 0 for the start and started on screen
+        LDA     #$00
+
+        ; Set the start screen and started on screen to 0
+        JSR     fn_set_start_and_started_on_screen
+
+        ; Reset the game
+        JSR     fn_reset_game
+
+        RTS
+
 ;2677
 .fn_show_high_score_table
         ; Reset the screen start address to $6000
@@ -5020,30 +5151,10 @@ INCLUDE "repton-music-intro-notes.asm"
         LDA     #$00
         STA     var_restart_pressed
         RTS        
-;...
-;2684
-        ; calls 0d6a
-        JSR     .fn_disable_vsync_event
-;...
 
-;L266B
-.fn_set_start_screen_and_reset_game
-        ; Set the middle high score digits to whatever
-        ; is passed in A ($80)
-        STA     var_high_score_mlsb
-
-        ; Set A to 0 for the start and started on screen
-        LDA     #$00
-
-        ; Set the start screen and started on screen to 0
-        JSR     fn_set_start_and_started_on_screen
-
-        ; Reset the game
-        JSR     fn_reset_game
-
-        RTS
-
-;....
+;269B
+        ; Spare bytes - 5
+        EQUB    $FF,$FF,$FF,$FF,$FF
 
 ;26A0
 .fn_set_start_and_started_on_screen
@@ -5101,7 +5212,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Reset the colour palette
         JSR     fn_reset_palette_to_default_game_colours
 
-        ; Junk bytes
+        ; Spare bytes
         NOP
         NOP
         NOP
@@ -5232,7 +5343,7 @@ INCLUDE "repton-music-intro-notes.asm"
         CMP     var_high_score_lsb
         BCC     end_check_and_update_high_score
 
-        ; Junk bytes - 2
+        ; Spare bytes - 2
         NOP
         NOP
 ;2AE0
@@ -5269,7 +5380,7 @@ INCLUDE "repton-music-intro-notes.asm"
         CMP     zp_masked_password_character
         RTS        
 
-;2AFF - junk byte?
+;2AFF - Spare byte?
         EQUB    $00        
 
 ;2B00
@@ -5303,7 +5414,7 @@ INCLUDE "repton-music-intro-notes.asm"
         EQUB    $00,$03,$06,$09,$0C,$0F,$12,$15
 
 ;2BE3
-        ; Junk Bytes? Maybe 9 or 10 high score   places 
+        ; Spare Bytes? Maybe 9 or 10 high score   places 
         ; originally
         EQUB    $0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D
         EQUB    $0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D
@@ -5331,7 +5442,7 @@ INCLUDE "repton-music-intro-notes.asm"
         RTS
 
 ;L2C0B
-        ; Junk bytes - 10
+        ; Spare bytes - 10
         NOP
         NOP
         NOP
@@ -5490,7 +5601,7 @@ INCLUDE "repton-music-intro-notes.asm"
         RTS        
 
 ;2C98
-        ; Junk bytes
+        ; Spare bytes
         EQUB    $00, $00, $20
 
 ;2C9B
@@ -5530,7 +5641,7 @@ INCLUDE "repton-music-intro-notes.asm"
         STA     var_high_score_msb
         RTS
 
-;2D57 - Junk Byte        
+;2D57 - Spare Byte        
         $00
 ;2D58        
 .text_password_screen_a
