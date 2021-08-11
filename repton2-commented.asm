@@ -1,22 +1,163 @@
 org &0A00
 
-; Zeropage
-; 01-15 appear to be set to current SOUND to play
-
 eventv_lsb_vector = $0220
 eventv_msb_vector = $0221
+
+
+; Interrupt-request vector 2 (IRQ2V)
+IRQ2V_LSB = $0206
+IRQ2V_MSB = $0207
+
+OSWRCH = $FFEE
+; Perfrom miscellaneous OS operation using control block to pass parameters
+OSWORD = $FFF1
+; Perfrom miscellaneous OS operation using registers to pass parameters
+OSBYTE = $FFF4
+
+; Sheila User Via Timer 2 Control low-order counter
+SHEILA_USER_VIA_R5_T1C_L = $FE64
+; Sheila User Via Timer 2 Control high-order counter
+SHEILA_USER_VIA_R5_T1C_H = $FE65
 ; Sheila User Via Timer 2 Control low-order latch
 SHEILA_USER_VIA_R8_T2C_L = $FE68
 ; Sheila User Via Timer 2 Control High-order latch
 SHEILA_USER_VIA_R9_T2C_H = $FE69
 ; Sheila User VIA Interrupt Enable Register
 SHEILA_USER_VIA_R14_IER = $FE6E
-SHEILA_SYSTEM_VIA_R14_IER= $FE4E
-SHEILA_SYSTEM_VIA_R14_IFR= $FE4D
+; OS Workspace 
+OS_WS_SCREEN_SIZE_PAGES=$0354
+OS_WS_MSB_OF_HIMEM=$034E
+OS_WS_NO_BYTES_PER_ROW_LSB=$0352
+OS_WS_NO_BYTES_PER_ROW_MSB=$0353
+OS_WS_SIZE_OF_SCREEN_MEMORY=$0353
+OS_WS_CURRENT_MODE=$0355
+WRCHV_LSB = $020E
+WRCHV_MSB = $020F
+IND1V_LSB =$0230
+IND1V_MSB =$0231
+FSCV_LSB = $021E
 
-; Interrupt-request vector 2 (IRQ2V)
-IRQ2V_LSB = $0206
-IRQ2V_MSB = $0207
+
+zp_screen_write_address_lsb = $0000
+zp_screen_write_address_msb = $0001
+zp_tile_load_address_lsb = $0002
+zp_tile_load_address_msb = $0003
+zp_sprite_parts_to_copy_or_blank = $0004
+zp_tile_x_pos_cache=$0006
+zp_tile_y_pos_cache=$0007
+zp_general_xpos_lookup_calcs=$0008
+zp_general_ypos_lookup_calcs=$0009
+zp_object_or_string_address_lsb = $000A
+zp_object_or_string_address_msb = $000B
+
+; Overloaded
+zp_required_sound_channel=$0000
+zp_sound_block_channel_lsb=$0001
+zp_sound_block_channel_msb=$0002
+zp_sound_block_amplitude_lsb=$0003
+zp_sound_block_amplitude_msb=$0004
+zp_sound_block_pitch_lsb=$0005
+zp_sound_block_pitch_msb=$0006
+zp_sound_block_duration_lsb=$0007
+zp_sound_block_duration_msb=$0008
+
+zp_game_screen_column_to_draw = $000E
+; Overloaded
+zp_print_zero_or_not_flag =$000F
+zp_game_screen_row_to_draw = $000F
+zp_display_value_msb = $0010
+zp_display_value_mlsb = $0011
+; Overloaded
+zp_display_value_lsb = $0012
+zp_visible_screen_top_left_xpos_cache = $0012
+zp_visible_screen_top_left_ypos_cache = $0013
+
+zp_masked_password_character=$003F
+
+zp_music_block_channel_lsb=$0060
+zp_music_block_channel_msb=$0061
+zp_music_block_amplitude_lsb=$0062
+zp_music_block_amplitude_msb=$0063
+zp_music_block_pitch_lsb=$0064
+zp_music_block_pitch_msb=$0065
+zp_music_block_duration_lsb=$0066
+zp_music_block_duration_msb=$0067
+
+zp_password_character_count = $006A
+zp_password_current_character_cache = $006B
+; Dual function zp address
+zp_screen_write_address_lsb=$0070
+zp_screen_password_lookup_lsb=$0070
+zp_starting_bit_offset_lsb_cache=$0070
+; Dual function zp address
+zp_screen_write_address_msb=$0071
+zp_screen_password_lookup_msb=$0071
+zp_starting_bit_offset_msb_cache=$0071
+; Dual function zp address
+zp_screen_dissolve_iterations=$0072
+zp_screen_password_lookup_index=$0072
+zp_object_index_lsb=$0072
+zp_random_byte_source_lsb=$0073
+zp_object_index_msb=$0073
+zp_random_byte_source_msb=$0074
+zp_object_index_lsb_cache=$0074
+zp_object_index_msb_cache=$0075
+
+zp_object_id=$0076
+
+zp_nth_object_index_lsb=$0077
+zp_nth_object_index_msb=$0078
+
+zp_current_map_cache_lsb=$0079
+zp_decode_map_counter_lsb=$0079
+zp_current_map_cache_msb=$007A
+zp_decode_map_counter_msb=$007A
+zp_string_to_display_current_byte = $007E
+zp_screen_write_total_byte_counter = $007F
+zp_sound_note_index=$007F
+zp_password_cursor_xpos = $0080
+zp_password_cursor_ypos = $0081
+zp_screen_colour_mask= $0082
+; Actually screen start xpos
+zp_visible_screen_top_left_xpos=$008C
+zp_visible_screen_top_left_ypos=$008D
+zp_screen_start_address_lsb = $008E
+zp_screen_start_address_msb = $008F
+
+
+eventv_lsb_vector = $0220
+eventv_msb_vector = $0221
+
+var_screen_number = $0900
+var_lives_left = $0901
+var_random_value = $0902
+var_repton_vertical_direction=$0903
+var_repton_horizontal_direction=$0904
+var_repton_animation_state=$0905
+var_repton_idle_counter=$0906
+var_main_loop_counter=$0907
+var_number_diamonds_left = $0908
+var_score_lsb  = $909
+var_score_mlsb = $90A
+var_score_msb  = $90B
+var_remaining_time_lsb  = $90C
+var_remaining_time_msb  = $90D
+var_high_score_lsb=$090E
+var_high_score_mlsb=$090F
+var_high_score_msb=$0910
+var_sound_status = $0911
+var_music_status = $0912
+; Indicates the both sound and music are on
+var_both_sound_and_music_on_status = $0913
+var_player_started_on_screen_x = $0914
+
+var_score_index = $0920
+var_bubble_sort_pass=$0921
+var_score_to_display_offset=$0921
+
+var_restart_pressed=$09FC
+var_note_sequence_number=$09FE
+var_music_rate_cycle=$09FF
 
 ; TODO RECLOCATE THIS IN MEMORY!!!!!
 
