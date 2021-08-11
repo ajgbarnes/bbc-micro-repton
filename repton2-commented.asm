@@ -315,7 +315,25 @@ INCLUDE "repton-third-chord-note.asm"
         EQUB    HI(sprite_explosion_medium)
         EQUB    HI(sprite_explosion_small)
 ;0E22
-
+.repton_moving_left_sprite_lookup
+        ; $06 - Repton Moving left,  left hand back
+        ; $07 - Repton Moving left,  left hand slightly back
+        ; $08 - Repton Moving left,  left hand slightly forward
+        ; $09 - Repton Moving left,  left hand forward
+        EQUB    $06,$06,$07,$08,$09,$09,$08,$07
+;0E2A
+.repton_moving_right_sprite_lookup
+        ; $02 - Repton Moving right, right hand forward
+        ; $03 - Repton Moving right, right hand slightly forward
+        ; $04 - Repton Moving right, right hand slightly back
+        ; $05 - Repton Moving right, right hand back
+        EQUB    $02,$02,$03,$04,$05,$05,$04,$03
+;0E32
+.repton_standing_idle_looking
+        ; $0A - Repton Standing
+        ; $0B - Repton Standing looking right
+        ; $0C - Repton Standing looking left
+        EQUB    $0A,$0B,$0A,$0C
 ;...
 ;0E36
 .data_map_object_required_bit_mask
@@ -523,13 +541,13 @@ INCLUDE "repton-third-chord-note.asm"
         RTS
 ;...
 ;L1058
-.end_play_intro_music
+.end_play_music_sound
         ; Restore A the amplitude
         PLA
         RTS
 
 ;L105A
-.fn_play_intro_music
+.fn_play_music_sound
         ; On entry:
         ; $0000 contains the required sound channel
         ;     A contains the amplitude
@@ -544,7 +562,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; (not music weirdly - bug?) and don't
         ; play the music if sound is off
         LDA     var_sound_status
-        BEQ     end_play_intro_music
+        BEQ     end_play_music_sound
 
         ; Restore the amplitude
         PLA
@@ -1309,15 +1327,23 @@ INCLUDE "repton-third-chord-note.asm"
 
         JMP     L0FC7
 
-;...
+;178E
+.fn_wait_600ms_then_initialise_game
+        ; Number of times to wait for 20ms
+        ; So wait fro 30 * 20ms = 600ms
         LDX     #$1E
-.L1790
+;1790
+.loop_wait_another_20ms
+        ; Wait for 20ms (until a vsync occurs)
         JSR     fn_wait_for_vertical_sync
 
+        ; Waited for 600ms yet or 30 times
+        ; around the loop - if not loop again
         DEX
-        BNE     L1790
+        BNE     loop_wait_another_20ms
 
-        JMP     L1FF0
+        ; Initialise game
+        JMP     fn_initialise_game_after_restart_no_high_score
 
 ;L1799
 .fn_write_r_to_restart
@@ -3021,7 +3047,7 @@ INCLUDE "repton-third-chord-note.asm"
 ;L1EBE
 .end_decode_map_object
         RTS
-;...
+
 ;1EBF
 .fn_reset_game
         ; Reset the screen number if negative
@@ -3141,13 +3167,20 @@ INCLUDE "repton-third-chord-note.asm"
 
         RTS
 
-;...
-.L1F09
+;L1F09
+.fn_check_repton_movement
+        ; Reset the vertical and horiztonal 
+        ; movement keypress indicators to zero
+        ; for no key detected
         LDA     #$00
-        STA     L0903
-        STA     L0904
+        STA     var_repton_vertical_direction
+        STA     var_repton_horizontal_direction
 
-        ;
+        ; Check the object above Repton 
+        ; to see if he can move there - if he can 
+        ; then check to see if the player is pressing
+        ; the up key (:)
+        ; x = (xpos + 14) / 4
         LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$0E
@@ -3155,6 +3188,7 @@ INCLUDE "repton-third-chord-note.asm"
         LSR     A
         TAX
 
+        ; x = (xpos + 13) / 4
         LDA     zp_visible_screen_top_left_ypos
         CLC
         ADC     #$0D
@@ -3164,17 +3198,17 @@ INCLUDE "repton-third-chord-note.asm"
 
         JSR     fn_lookup_screen_object_for_x_y
 
-        ; Is it Earth type 2
+        ; Is it a solid object? If so branch
         CMP     #$18
-        BCC     L1F3A
+        BCC     check_down_key
 
-        ; Is it an Egg?
+        ; Is it an Egg? If so branch
         CMP     #$1C
-        BEQ     L1F3A
+        BEQ     check_down_key
 
-        ; Is it a rock?
+        ; Is it a rock? If so branch
         CMP     #$1D
-        BEQ     L1F3A
+        BEQ     check_down_key
 
         ; Check to see if the : key is being pressed
         ; (Move Repton Up)
@@ -3182,10 +3216,18 @@ INCLUDE "repton-third-chord-note.asm"
         JSR     fn_read_key
 
         ; If it wasn't being pressed then branch away
-        BEQ     L1F3A
+        BEQ     check_down_key
 
-        INC     L0903
-.L1F3A
+        ; The : key was being pressed so 
+        ; change the value to $01 which indicates
+        ; repton is moving up
+        INC     var_repton_vertical_direction
+;L1F3A
+.check_down_key
+        ; Check the object below Repton 
+        ; to see if he can move there - if he can 
+        ; then check to see if the player is pressing
+        ; the down key (/)
         LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$0E
@@ -3200,52 +3242,71 @@ INCLUDE "repton-third-chord-note.asm"
         TAY
         JSR     fn_lookup_screen_object_for_x_y
 
-        ; Is it Earth type 2
+        ; Is it a solid object? If so branch
         CMP     #$18
-        BCC     L1F63
+        BCC     check_left_key
 
-        ; Is it an egg?
+        ; Is it an egg? If so branch
         CMP     #$1C
-.L1F53
-        BEQ     L1F63
+        BEQ     check_left_key
 
-        ; Is it an rock?
+        ; Is it an rock? If so branch
         CMP     #$1D
-        BEQ     L1F63
+        BEQ     check_left_key
 
         ; Check to see if the / key is being pressed
         ; (Move Repton Down)
         LDA     #$97
         JSR     fn_read_key
 
-        BEQ     L1F63
+        ; If it wasn't being pressed then branch away
+        BEQ     check_left_key
 
-        DEC     L0903
-.L1F63
+        ; The / key was being pressed so 
+        ; change the value to $FF which indicates
+        ; repton is moving up
+        DEC     var_repton_vertical_direction
+;L1F63
+.check_left_key
         ; Check to see if the Z key is being pressed
         ; (Move Repton Left)
         LDA     #$9E
         JSR     fn_read_key
 
-        BEQ     L1F6D
+        ; If it wasn't being pressed then branch away
+        BEQ     check_right_key
 
-        DEC     L0904
-.L1F6D
+        ; The Z key was being pressed so 
+        ; change the value to $FF which indicates
+        ; repton is moving left
+        DEC     var_repton_horizontal_direction
+;L1F6D
+.check_right_key
         ; Check to see if the X key is being pressed
         ; (Move Repton Right)
         LDA     #$BD
         JSR     fn_read_key
 
-        BEQ     L1F77
+        BEQ     cancel_horiztonal_if_vertical
 
-        INC     L0904
-.L1F77
-        LDA     L0903
-        BEQ     L1F81
+        ; The X key was being pressed so 
+        ; change the value to $01 which indicates
+        ; repton is moving right
+        INC     var_repton_horizontal_direction
+;L1F77
+.cancel_horiztonal_if_vertical
+        ; If Repton is moving vertically, then
+        ; cancel the horizontal movement
+        ; otherwise branch to the end of the fn
+        LDA     var_repton_vertical_direction
+        BEQ     end_check_repton_movement
 
+        ; Cancel the horizontal movement as Repton
+        ; is moving vertically
         LDA     #$00
-        STA     L0904
-.L1F81
+        STA     var_repton_horizontal_direction
+;L1F81
+.end_check_repton_movement
         RTS
 
 ;L1F82
@@ -3369,7 +3430,9 @@ INCLUDE "repton-third-chord-note.asm"
         STA     var_high_score_lsb
         STA     var_high_score_msb
 
-        JSR     L264D
+        ; Set the mlsb to $80, set the start and started
+        ; screens to zero and reset the game
+        JSR     fn_set_high_score_mlsb_and_start_screen
 
         ; Set sound, music and combined sound/music
         ; to on
@@ -3379,7 +3442,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; continues below
         
 ;1FED
-.fn_initiliase_game_after_restart
+.fn_initialise_game_after_restart
         ; This is called on load of the game and
         ; also if a player loses ALL of their lives
 
@@ -3388,11 +3451,15 @@ INCLUDE "repton-third-chord-note.asm"
         ; high score table
         JSR     fn_clear_screen_show_high_score_table
 
+        ; continues below
+
+;1FF0
+.fn_initialise_game_after_restart_no_high_score
         ; Reset the stack pointer 
         LDX     #$FF
         TXS
 
-        ; Junk bytes
+        ; Junk bytes - 2
         NOP
         NOP
 
@@ -3405,6 +3472,8 @@ INCLUDE "repton-third-chord-note.asm"
         STA     var_score_lsb
         STA     var_score_mlsb
         STA     var_score_msb
+
+        ; Reset the game
         JSR     fn_reset_game
 
 ;L2008
@@ -3425,8 +3494,8 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; TODO
         LDA     #$00
-        STA     L0907
-        STA     L0906
+        STA     var_main_loop_counter
+        STA     var_repton_idle_counter
 
         ; Reset the remaining time to $6000
         LDA     #$60
@@ -3441,6 +3510,8 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$02
         STA     zp_visible_screen_top_left_ypos
 
+;L2027
+.fn_return_pressed_from_game
         ; Start screen address is $6000 before scrolling
         LDA     #$00
         STA     zp_screen_start_address_lsb
@@ -3452,7 +3523,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Bottom four bits are the physical colour to set
         ; $11 = 0001 0001
         ;
-        ; Set logical colour 1 to physical colour 1 (Red)s
+        ; Set logical colour 1 to physical colour 1 (Red)
         LDA     #$11
         JSR     fn_define_logical_colour
 
@@ -3551,7 +3622,9 @@ INCLUDE "repton-third-chord-note.asm"
         ; pose
         JSR     fn_reset_music_and_draw_repton
 
-.L206E
+;206E
+.main_game_loop
+
         ; Check to see if the x position is in 
         ; at the start of a 32x32 grid position
         ; (remember ypos is 0 to 127) so mask
@@ -3596,77 +3669,297 @@ INCLUDE "repton-third-chord-note.asm"
         NOP
         NOP
         NOP
-        JSR     L1F09
+        JSR     fn_check_repton_movement
 
 .L2086
         ; Clear Binary Coded Decimal mode
         CLD
-        LDA     L0903
-        BEQ     L2097
+        ; Is the player trying to move repton
+        ; vertically?  If not, branch ahead
+        LDA     var_repton_vertical_direction
+        BEQ     check_horizontal_movement
 
-        BPL     L2094
+        ; Is the player trying to move Repton up?
+        ; If so branch ahead
+        BPL     move_repton_up
 
+        ; Move repton down
         JSR     L1C6B
 
-        JMP     L2097        
+        JMP     check_horizontal_movement
 
-.L2094
+;2094
+.move_repton_up
         JSR     L1CA1
 
-.L2097
-        LDA     L0904
+;L2097
+.check_horizontal_movement
+        ; Is the player trying to move repton
+        ; horizontally?  If not, branch ahead
+        LDA     var_repton_horizontal_direction
         BEQ     L20A7
 
-        BPL     L20A4
+        ; Is the player trying to move Repton right?
+        ; If so branch ahead
+        BPL     move_repton_right
 
+        ; Move repton left
         JSR     L1CD6
 
         JMP     L20A7
 
-.L20A4
+;20A4
+.move_repton_right
+        ; Move repton right
         JSR     L1D91
 
 .L20A7
+        ; Allow maskable interrupts
         CLI
-        LDA     L0903
+
+        ; Is the player trying to move repton
+        ; vertically?  If not, branch ahead
+        ; Otherwise work out the animation state
+        LDA     var_repton_vertical_direction        
         BEQ     L20B6
 
+        ; Vertical animation state is calculated from 
+        ; the top left ypos of the screen
+        ; 
+        ; State = (ypos / 4) AND 1
+        ;
+        ; Map is 32 x 32 objects
+        ;
+        ; Map is 128x128 tiles
+        ;
+        ; (xpos,ypos) works using 128x128
+        ;
+        ; So converts to 32x32 number dividing by 4
+        ;
+        ; And if it's odd show one state or even another
         LDA     zp_visible_screen_top_left_ypos
         LSR     A
         LSR     A
         AND     #$01
         STA     var_repton_animation_state
+
 .L20B6
+        ; Horizontal animation state is calculated from 
+        ; the top left xpos of the screen and there
+        ; are four possible animation sprites for moving left
+        ; and another four for moving right
+        ; 
+        ; State = (xpos / 2) AND 7
+        ;
+        ; $07 in binary is 00000111
+        ; So it masks to the bottom three bits
+        ; which gives seven lookups to the four
+        ; animation sprites
+        ;
+        ; Map is 32 x 32 objects
+        ;
+        ; Map is 128x128 tiles
+        ;
+        ; (xpos,ypos) works using 128x128
+        ;
+
+        ; Calculate the state as above
         LDA     zp_visible_screen_top_left_xpos
         LSR     A
         AND     #$07
+
+        ; Cache the lookup table value inX
         TAX
-        LDA     L0904
+
+        ; Check if the player is trying to 
+        ; move repton horizontally
+        LDA     var_repton_horizontal_direction
+
+        ; No left/right movement so branch ahead
         BEQ     L20D2
 
-        BPL     L20CC
+        ; Player moving Repton right so branch to that
+        ; code
+        BPL     find_moving_right_sprite
 
-        LDA     L0E22,X
-.L20C6
+        ; Player moving Repton left so lookup which
+        ; moving left sprite should be used using the
+        ; lookup table
+        LDA     repton_moving_left_sprite_lookup,X
+
+        ; Store this as the current repton sprite
+        ; so it will be drawn on the screen
         STA     var_repton_animation_state
-L20C8 = L20C6+2
         JMP     L20D2
 
-.L20CC
-        LDA     L0E2A,X
+;20CC
+.find_moving_right_sprite
+        ; Player moving Repton right so lookup which
+        ; moving right sprite should be used using the
+        ; lookup table
+        LDA     repton_moving_right_sprite_lookup,X
+
+        ; Store this as the current repton sprite
+        ; so it will be drawn on the screen        
         STA     var_repton_animation_state
+
 .L20D2
-        LDA     L0903
-        ORA     L0904
+        ; Check to see if the the player was 
+        ; moving repton either vertically or horizontally
+        LDA     var_repton_vertical_direction
+        ORA     var_repton_horizontal_direction
+
+        ; If player was moving Repton was moving 
+        ; vertically or horizontally then branch ahead
         BNE     L20E5
 
-        LDA     L0906
+        ; Player was not trying to move Repton
+        ; Check to see if Repton has been idle
+        ; for 127 times around this loop
+        LDA     var_repton_idle_counter
+
+        ; If it's negative then Repton has been
+        ; stood still for 127 checks around this
+        ; loop so branch ahead and get the standing
+        ; still icons
         BMI     L20ED
 
-        INC     L0906
-        JMP     L2100        
+        ; No player requested movement so increment
+        ; the number of times through this routine
+        ; that Repton has been idle
+        INC     var_repton_idle_counter
+        JMP     L2100
 
-;...
+.L20E5
+        ; Reset the idle counter as
+        ; player requested movement was
+        ; detected
+        LDA     #$00
+        STA     var_repton_idle_counter
+        JMP     L2100
+
+.L20ED
+        ; There is a main loop counter that 
+        ; is incremeneted each time around the
+        ; main game loop - it's used here to 
+        ; selected which repton animation sprite
+        ; to use for standing still
+        ;
+        ; Sprite index = (counter / 16) AND $03
+        ;
+        ; There are four standing idle lookup values
+        ; hence AND $03 / 0000 0011
+        ;
+        ; The divide by 16 means it won't change
+        ; that often, every 16th loop
+        LDA     var_main_loop_counter
+        LSR     A
+        LSR     A
+        LSR     A
+        LSR     A
+        AND     #$03
+        TAX
+
+        ; Player not trying to move so use the 
+        ; standing idle sprites and lookup based on 0907
+        LDA     repton_standing_idle_looking,X
+
+
+        ; Store this as the current repton sprite
+        ; so it will be drawn on the screen             
+        STA     var_repton_animation_state
+
+        ; Draw the repton standing idle sprite on the screen
+        JSR     fn_lookup_repton_sprite_and_display
+
+.L2100
+        ; Switch off Binary Coded Decimal mode
+        CLD
+
+        LDA     #$FF
+        JSR     L121E
+
+        JSR     L12F6
+
+        LDA     #$1F
+        JSR     L121E
+
+        ; Junk byte -1
+        NOP
+
+
+        LDA     var_number_diamonds_left
+        BNE     L2138
+
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$02
+        AND     #$03
+        BNE     L2138
+
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$02
+        AND     #$03
+        BNE     L2138
+
+        ; Screen has been completed so increment
+        ; the current screen number
+        INC     var_screen_number
+
+        ; Was this the last screen? If not,
+        ; branch ahead
+        LDA     var_screen_number
+        CMP     #$0C
+        BNE     L2135
+
+        ; Last screen completed 
+        LDA     #$00
+        JSR     fn_display_completed_screen
+
+.L2135
+        JMP     L2005
+
+.L2138
+        ; Junk byte - 1
+        NOP
+        JSR     L1588
+
+        ; Allow maskable interrupts
+        CLI
+
+        ; Check if the return key has been pressed
+        ; INKEY -74/ $B6
+        LDA     #$B6
+        JSR     fn_read_key
+
+        ; If the key was not being pressed branch
+        ; ahead and check for other key presses
+        BEQ     check_for_other_key_presses
+
+        ; Return was pressed - show the
+        ; status screen
+        JMP     fn_return_pressed_from_game
+
+;2147
+.check_for_other_key_presses
+        ; Check if the music on/off or restart
+        ; game keys are being pressed
+        JSR     fn_check_r_d_w_keys
+
+        ; Check if the escape key is being
+        ; pressed for the player to kill repton
+        JSR     fn_check_escape_key
+
+        JSR     L16EB
+
+        ; Increment the main loop counter
+        ; Used for standing idle animation
+        INC     var_main_loop_counter
+        JMP     main_game_loop
+
+        ; Junk bytes - 2
+        EQUB    $00, $00
 ;L2158
 .fn_check_r_d_w_keys
         ; Check to see if the player has 
@@ -3708,7 +4001,7 @@ L20C8 = L20C6+2
         BEQ     set_combined_sound_music
 
         ; Restart the game
-        JMP     L26A7
+        JMP     fn_restart_game
 
 ;L217A
 .set_combined_sound_music
@@ -3769,7 +4062,7 @@ L20C8 = L20C6+2
         STA     zp_password_cursor_ypos
 
         ; NOTE same as the code at 17C4
-        ; Set the byte counter for the loading 
+        ; Set the byte counter for loading 
         ; and displaying the repton logo to zero 
         LDA     #$00
         STA     zp_screen_write_total_byte_counter
@@ -3791,7 +4084,8 @@ L20C8 = L20C6+2
         RTS
 ;...
 
-.L21D0
+;L21D0
+.fn_play_intro_music
         ; Reset the sound note index to the
         ; start of the tune
         LDA     #$00
@@ -3826,7 +4120,7 @@ L20C8 = L20C6+2
         ; A     - set to the amplitude
         ; X     - set to the pitch (note)
         ; Y     - set to the duration
-        JSR     fn_play_intro_music
+        JSR     fn_play_music_sound
 
 ;21E6
 .play_intro_music_channel_2
@@ -3856,7 +4150,7 @@ L20C8 = L20C6+2
         ; A     - set to the amplitude
         ; X     - set to the pitch (note)
         ; Y     - set to the duration        
-        JSR     fn_play_intro_music
+        JSR     fn_play_music_sound
 
 ;21F8
 .play_intro_music_channel_3
@@ -3886,7 +4180,7 @@ L20C8 = L20C6+2
         ; A     - set to the amplitude
         ; X     - set to the pitch (note)
         ; Y     - set to the duration      
-        JSR     fn_play_intro_music
+        JSR     fn_play_music_sound
 
 ;220A
 .wait_for_80ms
@@ -3909,7 +4203,11 @@ L20C8 = L20C6+2
         ; for the intro tune - loop if not
         ; all played yet
         CMP     #$34
-        BNE     play_next_intro_chord     
+        BNE     play_next_intro_chord
+
+        ; Re-enable maskable interrupts
+        CLI
+        RTS
 ;...
 
 
@@ -4420,7 +4718,7 @@ INCLUDE "repton-music-intro-notes.asm"
         JSR     fn_write_string_to_screen
 
         LDA     #$00
-        JMP     $178E        
+        JMP     $fn_wait_600ms_then_initialise_game     
 
 ;...
 .253F
@@ -4448,7 +4746,63 @@ INCLUDE "repton-music-intro-notes.asm"
         JSR     fn_set_start_and_started_on_screen
 .end_reset_start_and_started_on_screen
         RTS        
-;...
+
+;2567
+.fn_check_if_nearly_out_of_time
+        ; Checks to see if remaining time is less than 300
+        ; and flashes the screen (well repeated calls flash it)
+        ; based on the background music note sequence. Also plays
+        ; a white noise sound
+        LDA     var_remaining_time_msb
+        CMP     #$03
+        BCS     end_check_if_nearly_out_of_time
+
+        ; Every fourth beat flash the screen white
+        LDA     var_note_sequence_number
+        AND     #$03
+        BEQ     flash_screen_white_and_play_beep
+
+        ; Top four bits are the logical colour to assign
+        ; Bottom four bits are the physical colour to set
+        ; $00 = 0000 0000
+        ;
+        ; Set logical colour 0 to physical colour 0 (Black)
+        LDA     #$00
+        JSR     fn_define_logical_colour
+
+        ; Check to see if the player has changed their
+        ; sound preferences by pressing a key i.e.
+        ; S for sound on and Q for sound off
+        JMP     fn_check_sound_keys
+
+;257D
+.flash_screen_white_and_play_beep
+        ; Top four bits are the logical colour to assign
+        ; Bottom four bits are the physical colour to set
+        ; $07 = 0000 0007
+        ;
+        ; Set logical colour 0 to physical colour 7 (White)
+        LDA     #$07
+        JSR     fn_define_logical_colour
+
+        ; Set the sound channel to white noise 0 ($x0) 
+        ; with the immediate flush of the sound channel
+        ; to play the note ($1x)
+        LDA     #$10
+        STA     zp_required_sound_channel
+
+        ; Set the pitch to 10
+        TAX
+        ; Set the amplitude to -15 (loudest)
+        LDA     #$F1
+        ; Set the duration to 1 (1/20th of a second)
+        LDY     #$01
+        JSR     fn_play_music_sound
+
+;258E
+.end_check_if_nearly_out_of_time
+        JMP     fn_check_sound_keys
+
 ;L2591
 .fn_add_one_to_lives_left_for_display
         ; Lives are stored as zero based (0 is one life left)
@@ -4524,7 +4878,10 @@ INCLUDE "repton-music-intro-notes.asm"
         NOP
 
 .L25F9
-        JSR     L2158
+        ; Check to see if the player has 
+        ; asked for the music to be switched 
+        ; on or off or pressed restart
+        JSR     fn_check_r_d_w_keys
 
         ; If less than four lives are 
         ; left then return - player can't enter 
@@ -4557,13 +4914,20 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Display the password entry screen
         JSR     fn_display_password_screen
 
-        JSR     L1EBF
+        ; Reset the game to a new game
+        JSR     fn_reset_game
 
+        ; No idea what's on the stack at this point
+        ; but it's cleared and thrown away
         PLA
         PLA
 .L2625
-        JSR     L2653
+        ; If player has all lives and score is zero
+        ; then play the intro music as it's the
+        ; start of a game
+        JSR     fn_check_if_intro_music_should_play
 
+        ; Dissolve the screen 
         JMP     fn_dissolve_screen
 
 .L262B
@@ -4582,22 +4946,23 @@ INCLUDE "repton-music-intro-notes.asm"
         LDA     #$FF
         STA     var_restart_pressed
 
-        ; Initialised the game
+        ; Initialise the game
         JMP     fn_initialise_game
 
-.L264D
+;L264D
+.fn_set_high_score_mlsb_and_start_screen
         LDA     #$80
-        JSR     L266B
+        JSR     fn_set_start_screen_and_reset_game
 
-        ; NEXT HERE....
-
-.L2652
+;L2652
+.end_check_if_intro_music_should_play
         RTS        
-.L2653
+;L2653
+.fn_check_if_intro_music_should_play
         ; Check to see if there are still four lives left
         LDA     var_lives_left
         CMP     #$03
-        BNE     L2652
+        BNE     end_check_if_intro_music_should_play
 
         ; Four lives left
         ; Check to see if a new game has started
@@ -4607,13 +4972,16 @@ INCLUDE "repton-music-intro-notes.asm"
         ; the time LSB isn't zero (there's a chance)
         ; a player could come back to the screen before
         ; the score has been updated on a new game
+        ;
+        ; If it is a new game then play the intro music!
         LDA     var_score_lsb
         ORA     var_score_mlsb
         ORA     var_score_msb
         ORA     var_remaining_time_lsb
-        BNE     L2652
+        BNE     end_check_if_intro_music_should_play
 
-        JMP     L21D0        
+        ; Play the short intro music and return
+        JMP     fn_play_intro_music   
 ;...
 ;2677
 .fn_show_high_score_table
@@ -4637,15 +5005,18 @@ INCLUDE "repton-music-intro-notes.asm"
         LDA     var_restart_pressed
         BNE     end_show_high_score_table
 
+        ; Display the high scores on the screen
         JSR     fn_sort_and_display_scores
 
+        ; Show the repton logo on the high score screen
         JSR     fn_show_high_score_repton_logo
 
+        ; Wait for the player to hit the space bar
         JSR     fn_loop_wait_for_space_bar_on_screen
 
 ;2695
 .end_show_high_score_table
-        ; Rest the "hide high score screen" flag
+        ; Reset the "hide high score screen" flag
         LDA     #$00
         STA     var_restart_pressed
         RTS        
@@ -4655,16 +5026,20 @@ INCLUDE "repton-music-intro-notes.asm"
         JSR     .fn_disable_vsync_event
 ;...
 
-;L266b
-.dunno_yet
-        ; Set the middle high score digits to zero
+;L266B
+.fn_set_start_screen_and_reset_game
+        ; Set the middle high score digits to whatever
+        ; is passed in A ($80)
         STA     var_high_score_mlsb
+
+        ; Set A to 0 for the start and started on screen
         LDA     #$00
 
         ; Set the start screen and started on screen to 0
-        JSR     .fn_set_start_and_started_on_screen
+        JSR     fn_set_start_and_started_on_screen
 
-        JSR     L1EBF
+        ; Reset the game
+        JSR     fn_reset_game
 
         RTS
 
@@ -4691,7 +5066,7 @@ INCLUDE "repton-music-intro-notes.asm"
         JSR     fn_set_start_and_started_on_screen
 
         ; Reinitialise and restart the game
-        JMP     fn_initiliase_game_after_restart
+        JMP     fn_initialise_game_after_restart
 ;...
 ;2800
 
@@ -4708,8 +5083,8 @@ INCLUDE "repton-music-intro-notes.asm"
         STA     var_score_msb
         RTS
 
-; TODO FUNCTION NAME
-.L2A4E
+;2A4E
+.fn_display_completed_screen
         ; Set the screen number to whatever was passed
         ; in A
         STA     var_screen_number
