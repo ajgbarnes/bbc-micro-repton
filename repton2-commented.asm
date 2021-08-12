@@ -503,7 +503,9 @@ INCLUDE "repton-third-chord-note.asm"
         NOP
         NOP
         NOP        
-
+;0E00
+        ; Spare bytes - 2
+        EQUB    $0D,$FF
 ;...
 
         ; Table of Repton poses - based on the value of $0905
@@ -520,8 +522,8 @@ INCLUDE "repton-third-chord-note.asm"
         ; $3B00 - Repton Standing
         ; $3B20 - Repton Standing looking right
         ; $3B40 - Repton Standing looking left
-        ; ... (monster left hand up)
-        ; ... (monster right hand up)
+        ; ... ($3B60 - Monster left hand up)
+        ; ... ($3B80 - Monster right hand up)
         ; $3BA0 - Big explosion
         ; $3BC0 - Medium explosion
         ; $3BE0 - Small explosion
@@ -583,7 +585,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; $0B - Repton Standing looking right
         ; $0C - Repton Standing looking left
         EQUB    $0A,$0B,$0A,$0C
-;...
+
 ;0E36
 .data_map_object_required_bit_mask
 ; This table is used to look up the required bit
@@ -601,16 +603,18 @@ INCLUDE "repton-third-chord-note.asm"
 ;  6  01000000 ($40)
 ;  7  10000000 ($80)
         EQUB    $01,$02,$04,$08,$10,$20,$40,$80      
-;... 
+;0E3E
+        ; TODO - used when a rock drops
+        EQUB    $00,$C0,$80,$40,$00,$03,$02,$01
 
-; 0E46
+;0E46
 .envelope_1
         ; OSWORD &08 / ENVELOPE Paramter block
         ; ENVELOPE 1,2,0,0,0,1,2,3,100,1,255,254,126,126
         ; https://central.kaserver5.org/Kasoft/Typeset/BBC/Ch30.html
         EQUB    $01,$02,$00,$00,$00,$01,$02,$03
         EQUB    $64,$01,$FF,$FE,$7E,$7E
-;...
+
 ;0E54
 .data_screen_physical_colour_lookup
         ; Lookup table of physical colour to 
@@ -649,7 +653,8 @@ INCLUDE "repton-third-chord-note.asm"
         ; Screen L - Cyan
         EQUB    $06
 
-;L0E60
+;0E60
+; TODO EXPLAIN THESE
 .data_screen_character_lookup_table
         EQUB    $73,$BC,$BD,$69,$BF,$BE,$75,$73
         EQUB    $62,$63,$C7,$73,$C3,$6C,$C2,$71
@@ -659,26 +664,27 @@ INCLUDE "repton-third-chord-note.asm"
         EQUB    $8F,$90,$91,$92,$93,$94,$95,$96
         EQUB    $97,$98,$99,$9A,$9B,$9C,$9D,$9E
         EQUB    $9F,$A0,$A1,$C4,$72,$C5,$70,$6C
-;EA0        
+;0EA0        
         EQUB    $76,$A2,$A3,$A4,$A5,$A6,$A7,$A8
         EQUB    $A9,$AA,$AB,$AC,$AD,$AE,$AF,$B0
-;EB0
+;0EB0
         EQUB    $B1,$B2,$B3,$B4,$B5,$B6,$B7,$B8
         EQUB    $B9,$BA,$BB,$64,$6E,$65,$6D,$64
         EQUB    $65,$66,$67,$6A,$6B,$6D,$6E
-;EBF        
+;0EBF        
         EQUB    $6F,$11,$12,$13,$14,$0D,$0F,$10
         EQUB    $0E,$0C,$70,$72,$75,$76,$77,$BD
         EQUB    $24,$25,$69,$BE,$BF,$C0,$C3,$73
-;..
+
 ;0EDF
 .data_screen_colour_masks
+        ; In mode 5, the screen is 2 bits per pixel
+        ; with the bits in the same position in the 
+        ; top and bottom nibbles
+        ; e.g. 01[0]1 00[0]1 where the [] represents the same pixel
+        ; Masking uses both bits ($FF), just the lower bits ($0F)
+        ; or just the higher bits ($F0) to choose the colour
         EQUB    $00,$0F,$F0,$FF
-
-; TODO - don't know yet
-;0EED
-        EQUB    $42,$79
-;...
 
 ; 0EE3
 .text_by_superior_software
@@ -714,14 +720,16 @@ INCLUDE "repton-third-chord-note.asm"
 .text_press_space
         EQUS    $81,"Press",$82," SPACE ",$81," to play game",$0D,$0D
 
-.L0FB4
+;0FB4
 .fn_wait_for_vertical_sync
-        ; Waits for 20ms
-        ;
+        ; Waits for up to 20ms
+        
         ; Preserve the processor flags
         PHP
-        ; Clear maskable interrupts
+
+        ; Allow maskable interrupts
         CLI
+
 ;L0FB6
 .loop_wait_for_vsync
         ; This waits function waits up to 20 ms for an 
@@ -753,8 +761,207 @@ INCLUDE "repton-third-chord-note.asm"
         ; Restore the processor flags
         PLP
         RTS
-
+;0FC7
 ;...
+;calls 25a3
+
+;0FC7
+.fn_check_if_high_score
+        ; Display the Repton logo on the screen
+        JSR     fn_display_repton_logo_for_high_score_entry
+
+        ; The scores are not stored in sequence in memory
+        ; from lowest to highest (or vice versa).  So this
+        ; piece of code loops through the scores looking for
+        ; the lowest score.  It starts by comparing
+        ; the first to 99999 to see if it is lower,
+        ; it it is then it caches that in $0920-$0922 and
+        ; the index position in $0933. It loops through
+        ; every score (again they are not in order once
+        ; the player starts getting scores in the that table)
+        ; and will record the lowest and its index position.
+
+        ; Set the comparison score to high 999999 
+        LDA     #$99
+        STA     var_lowest_high_score_lsb
+        STA     var_lowest_high_score_mlsb
+        STA     var_lowest_high_score_msb
+
+        ; Scores are stored in the correct order between
+        ; $2B00 - $2B17 (3 bytes per score). Stored
+        ; in Binary Coded Decimal (BCD) format but
+        ; doesn't matter for the comparison
+        LDX     #$00
+;0FD7
+.loop_find_lowest_high_score
+        ; Looking for the lowest score in the high 
+        ; score table
+        ;
+        ; Check to see if the current high score
+        ; position MSB is less than the current
+        ; cached score (which starts at 999999)
+        LDA     data_high_scores+2,X
+        CMP     var_lowest_high_score_msb
+
+        ; If high score table score MSB is less
+        ; than cached high score then branch and
+        ; set the cached high score to this 
+        ; high score
+        BCC     cache_lower_high_score
+
+        ; If the high score table score MSB is greater
+        ; than the cached high score, branch and move 
+        ; to the next score in the high score table
+        BNE     get_next_high_score
+
+        ; At this point the high score table MSB
+        ; is the same as the cached high score so
+        ; compare the MLSB next
+
+        ; Check to see if the current high score
+        ; position MLSB is less than the current
+        ; cached score
+        LDA     data_high_scores+1,X
+        CMP     var_lowest_high_score_mlsb
+
+        ; If high score table score MLSB is less
+        ; than cached high score then branch and
+        ; set the cached high score to this 
+        ; high score
+        BCC     cache_lower_high_score
+
+        ; If the high score table score MLSB is greater
+        ; than the cached high score, branch and move 
+        ; to the next score in the high score table
+        BNE     get_next_high_score
+
+        ; At this point the high score table MLSB
+        ; is the same as the cached high score so
+        ; compare the LSB next
+        LDA     data_high_scores,X
+        CMP     var_lowest_high_score_lsb
+
+        ; If high score table score LSB is less
+        ; than cached high score then branch and
+        ; set the cached high score to this         
+        BCC     cache_lower_high_score
+
+        ; If the high score table score LSB is greater
+        ; than the cached high score, branch and move 
+        ; to the next score in the high score table
+        BNE     get_next_high_score
+
+        ; At this point the high score table LLSB
+        ; is the same as the cached high score so
+        ; set the cached high score to this one
+
+;0FF5
+.cache_lower_high_score
+        ; Cache the current lowest score
+        JSR     fn_cache_lower_high_score
+
+;0FF8
+.get_next_high_score
+        ; Move to the next score (each score is
+        ; 3 bytes so increment X by 3)
+        INX
+        INX
+        INX
+
+        ; There are 8 high scores each of 
+        ; 4 bytes so if X != 24 then there
+        ; are still scores to process
+        CPX     #$18
+        BNE     loop_find_lowest_high_score
+
+        ; Check the player's high score MSB
+        ; against the lowest high score - if it
+        ; is less then don't show the congratulations
+        ; screen
+        LDX     var_lowest_high_score_index
+        LDA     var_score_msb
+        CMP     data_high_scores+2,X
+        ; If player high score MSB was lower than
+        ; the lowest high score, branch ahead
+        BCC     end_check_if_high_score
+
+        ; If it was greater than display congratulations
+        BNE     display_congratulations
+
+        ; Otherwise the player high score MSB was the
+        ; same as the lowest high score MSB so check
+        ; the MLSB
+        ;
+        ; Check the player's high score MLSB
+        ; against the lowest high score - if it
+        ; is less then don't show the congratulations
+        ; screen
+        LDA     var_score_mlsb
+        CMP     data_high_scores+1,X
+
+        ; If player high score MLSB was lower than
+        ; the lowest high score, branch ahead
+        BCC     end_check_if_high_score
+
+        ; If it was greater than display congratulations
+        BNE     display_congratulations
+
+        ; Otherwise the player high score LSB was the
+        ; same as the lowest high score LSB so check
+        ; the LSB
+        LDA     var_score_lsb
+        CMP     data_high_scores,X
+
+        ; If player high score LSB was lower than
+        ; the lowest high score, branch ahead
+        BCC     end_check_if_high_score
+
+        ; If it was greater than display congratulations
+        BNE     display_congratulations
+
+        ; At this point they are they same - so if
+        ; the player high score equals the lowest high
+        ; score it will display congratulations too
+
+;L1020
+.display_congratulations
+        ; Set the cursor position to (0,15)
+        LDX     #$00
+        LDY     #$0F
+
+        ;-----------------------------------
+        ; Congratulations. Enter your name
+        ;-----------------------------------
+        ; String to write to the screen is 
+        ; stored at $2D00
+        ; Set the LSB to the string        
+        LDA     #HI(text_congrats_enter_name)
+        STA     zp_string_to_display_msb
+
+        ; Set the MSB to the string        
+        LDA     #LO(text_congrats_enter_name)
+        STA     zp_string_to_display_lsb
+
+        ; Write string to screen
+        JSR     fn_write_string_to_screen
+
+        ; Display the high score name entry field
+        JSR     fn_display_high_score_name_entry_field
+
+        ; Spare byte - 1
+        NOP
+
+        ; Let the player enter their name
+        JSR     fn_get_player_password_or_name
+
+        ; Update lowest high score entry with
+        ; the player's name and score
+        JSR     fn_replace_lowest_high_score_with_current
+
+;1039
+.end_check_if_high_score
+        ; Reinitialise and restart the game
+        JMP     fn_initiliase_game_after_restart
 
 ;1044
 .fn_generate_random_number
@@ -1366,10 +1573,14 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Greater than $80 so need to look up the
         ; colour mask. The colour mask is used 
-        ; to ask out the colour - values are either $00, $0F, $F0 or $FF
+        ; to mask out the colour - values are either $00, $0F, $F0 or $FF
+        ;
+        ; So looks like anything $80 and above just sets the colour mask
+        ; based on the bottom three bits
+        ;
         ; In mode 5, the screen is 2 bits per pixel
         ; with the bits in the same position in the 
-        ; top and bottom nibble
+        ; top and bottom nibbles
         ; e.g. 01[0]1 00[0]1 where the [] represents the same pixel
         ; Masking uses both bits ($FF), just the lower bits ($0F)
         ; or just the higher bits ($F0) to choose the colour        
@@ -1377,7 +1588,7 @@ INCLUDE "repton-third-chord-note.asm"
         TAX
         LDA     data_screen_colour_masks,X
         STA     zp_screen_colour_mask
-.L11EB
+
         JMP     end_print_character_to_screen
 
 ;L11EE
@@ -1684,6 +1895,15 @@ INCLUDE "repton-third-chord-note.asm"
 ;17B5
 .fn_display_repton_start_screen
         JSR     fn_update_high_score_reset_music
+        
+        ; This is almost identical to $25A6
+
+        ; The Repton logo isn't a bitmap graphic as such
+        ; it's a series of user defined characters
+        ; the same ones used for the map - and 
+        ; that's how it's defined in memory.  So
+        ; load the charactes and display the right
+        ; tile / user defined character
 
         ; Set the colour mask to show black and
         ; red only 
@@ -1711,6 +1931,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; to the screen
         INC     zp_screen_write_total_byte_counter
         LDA     zp_screen_write_total_byte_counter
+
         ; 192 bytes
         CMP     #$C0
         BNE     loop_get_next_repton_logo_byte
@@ -4907,9 +5128,6 @@ INCLUDE "repton-music-intro-notes.asm"
         EQUS    $81,"Well done.  Now do that from thevery start of screen one.",$0D
 .text_screen_complete_amazing        
         EQUS    $81,"Amazing!  Now try again.",$0D
-        ; CODE!
-        EQUS    $A9,$FF,$8D,$FE,$09,$A9,$FF,$8D,$FF,$09," ",$B4,$0F,"LV",$0D
-        EQUS    "(C) Timothy Tyler 1985",$0D
 ;...
 ;L24B3
 .fn_reset_music_and_draw_repton
@@ -4928,6 +5146,46 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Put repton on the screen in the default
         ; Repton Standing pose
         JMP     fn_draw_repton
+
+;24C3
+.text_copyright
+        ; Unused copyright statement
+        ; Spare bytes - 23
+        EQUS    "(C) Timothy Tyler 1985"
+        EQUB    $0D
+
+;24DA
+.fn_display_high_score_name_entry_field
+        ; Set the cursor position to (2,22)
+        LDA     #$02
+        STA     zp_password_cursor_xpos
+        LDA     #$16
+        STA     zp_password_cursor_ypos
+
+        ; Set the colour mask to all colours
+        LDA     #$FF
+        STA     zp_screen_colour_mask
+
+        ; Write an & to the screen (gets translated into
+        ; two vertical lines with dots tile)
+        LDA     #$26
+        JSR     fn_print_character_to_screen
+
+        ; Set the cursor position to (25,22)
+        ; Note ypos is already set above
+        LDA     #$19
+        STA     zp_password_cursor_xpos
+
+        ; Write an & to the screen (gets translated into
+        ; two vertical lines with dots tile)
+        LDA     #$26
+        JSR     fn_print_character_to_screen
+
+        ; Set the cursor start position for name entry 
+        ; to (03,22)
+        LDX     #$03
+        LDY     #$16
+        RTS
 ;...
 ;2500
 .fn_reset_palette_to_default_game_colours
@@ -5119,6 +5377,60 @@ INCLUDE "repton-music-intro-notes.asm"
         LDX     #$05
         RTS        
 ;...
+
+
+;25A3
+.fn_display_repton_logo_for_high_score_entry
+        ; Dissolve the screen
+        JSR     fn_dissolve_screen
+
+        ; This is almost identical to $17B8
+
+        ; The Repton logo isn't a bitmap graphic as such
+        ; it's a series of user defined characters
+        ; the same ones used for the map - and 
+        ; that's how it's defined in memory.  So
+        ; load the charactes and display the right
+        ; tile / user defined character
+
+        ; Set the text cursor position to (0,3)
+        ; Set the x part
+        LDA     #$00
+        STA     zp_password_cursor_xpos
+
+        ; Set the colour mask to show black and
+        ; red only         
+        LDA     #$0F
+        STA     zp_screen_colour_mask
+
+        ; Set the y part
+        LDA     #$03
+        STA     zp_password_cursor_ypos
+
+        ; Set the byte counter for the loading 
+        ; and displaying the repton logo to zero 
+        LDA     #$00
+        STA     zp_screen_write_total_byte_counter
+;L25B6
+.loop_get_next_repton_logo_char
+        ; Get the current byte / tile and 
+        ; write it to the screen
+        LDY     zp_screen_write_total_byte_counter
+        LDA     data_repton_logo,Y
+        JSR     fn_print_character_and_increment_xpos
+
+        ; Increment the total byte counter and check
+        ; to see if all of the logo has been copied
+        ; to the screen
+        INC     zp_screen_write_total_byte_counter
+        LDA     zp_screen_write_total_byte_counter
+
+        ; 192 bytes
+        CMP     #$C0
+        BNE     loop_get_next_repton_logo_char
+
+        RTS
+
 
 ;L25D0
 .fn_display_p_or_r_option
@@ -5361,7 +5673,77 @@ INCLUDE "repton-music-intro-notes.asm"
 ;...
 ;2800
 
-;...
+;2A00
+.fn_replace_lowest_high_score_with_current
+        
+        ; Get the lowest high score index that
+        ; was cached previously when scanning the
+        ; high score table
+        LDX     var_lowest_high_score_index
+
+        ; Change the lowest high score index 
+        ; value to the player's high score
+        LDA     var_score_lsb
+        STA     data_high_scores,X
+        LDA     var_score_mlsb
+        STA     data_high_scores+1,X
+        LDA     var_score_msb
+        STA     data_high_scores+2,X
+
+        ; Multiply the lowest high score index
+        ; by 8 as each high score name is 24 
+        ; characters long and the index is 
+        ; multiples of 3 based as each score is 
+        ; 3 bytes long
+        TXA
+        ; Multiply by 2
+        ASL     A
+        ; Multiply by 2
+        ASL     A
+        ; Multiply by 2
+        ASL     A
+        TAX
+
+        ; Read the player entered name and replace
+        ; the lowest high score name in the high score
+        ; table with it
+        LDY     #$00
+;2A1C
+.loop_copy_high_score_name
+        ; Get the current nth character of the name
+        LDA     data_player_entered_password_or_name,Y
+        ; Store it in the high score table
+        STA     data_high_score_names,X
+        ; Move to the next character
+        INX
+        INY
+        ; If not all 24 characters have been copied
+        ; then loop again
+        CPY     #$18
+        BNE     loop_copy_high_score_name
+
+        RTS
+
+
+;2A29
+.fn_cache_lower_high_score
+        ; Cache the lowest score so 
+        ; far index position
+        STX     L0923
+
+        ;  Cache the lowest score LSB
+        LDA     data_high_scores,X
+        STA     var_lowest_high_score_lsb
+
+        ;  Cache the lowest score MLSB
+        LDA     data_high_scores+1,X
+        STA     var_lowest_high_score_mlsb
+
+        ;  Cache the lowest score MSB
+        LDA     data_high_scores+2,X
+        STA     var_lowest_high_score_msb
+
+        RTS
 
 ;2A3F
 .fn_call_osword_and_reset_score
@@ -5694,7 +6076,7 @@ INCLUDE "repton-music-intro-notes.asm"
         LDY     #$06
 
         ; Let the player enter the password
-        JSR     fn_get_player_password
+        JSR     fn_get_player_password_or_name
 
         ; Reset the screen password index to zero
         ; before trying to match passwords
@@ -5887,7 +6269,7 @@ INCLUDE "repton-music-intro-notes.asm"
 
 
 ;2E00
-.fn_get_player_password
+.fn_get_player_password_or_name
         ; Set the entered password length to zero
         ; as the player hasn't entered anything yet
         LDA     #$00
@@ -5896,7 +6278,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Flush keyboard buffer and all other buffers
         JSR     fn_flush_all_buffers_cache_xpos_and_ypos
 
-        ; Spare byte
+        ; Spare byte - 1
         NOP
 
         ; Set the colour mask to only use
@@ -6028,7 +6410,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; next character
         LDX     zp_password_character_count
         LDA     zp_password_current_character_cache
-        STA     data_player_entered_password,X
+        STA     data_player_entered_password_or_name,X
         INC     zp_password_character_count
         JMP     read_next_password_character
 
@@ -6044,7 +6426,7 @@ INCLUDE "repton-music-intro-notes.asm"
 ;L2E68
 .loop_set_carriage_return
         ; Set the current position to a CR
-        STA     data_player_entered_password,X
+        STA     data_player_entered_password_or_name,X
         INX
         ; Have we reached the end of the memory buffer
         ; if not loop back
@@ -6169,7 +6551,7 @@ INCLUDE "repton-music-intro-notes.asm"
 .text_off
         EQUS    "Off",$0D
 ;2EE8
-.data_player_entered_password
+.data_player_entered_password_or_name
         ; Used to store the characters of the 
         ; screen password as the player
         ; enters them - then campared
