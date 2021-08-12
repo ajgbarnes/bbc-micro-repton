@@ -170,7 +170,7 @@ INCLUDE "repton-third-chord-note.asm"
 ;0D00
 ; Spare byte?
         EQUB    $00
-;L0D01
+;0D01
 .end_event_handler_IRQ2V
         ; This is the end of the IRQV2 event handler
         ; Restore A, X and Y from the stack
@@ -320,7 +320,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDX     #$04
         JMP     OSBYTE
 
-;L0D76
+;0D76
 .fn_reset_palette_music_and_vsync
         ; Reset 
         JSR     fn_dissolve_screen
@@ -329,7 +329,7 @@ INCLUDE "repton-third-chord-note.asm"
         STA     var_note_sequence_number
         RTS
 
-;L0D7F
+;0D7F
 .fn_play_game_sound
         ; Check to see if both sound and music are on
         ; if not branch to the end
@@ -347,7 +347,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$07
         JSR     OSWORD
 
-;L0D8D
+;0D8D
 .skip_play_sound
         INC     L0060
         RTS
@@ -392,7 +392,7 @@ INCLUDE "repton-third-chord-note.asm"
         STA     IRQ2V_MSB
         RTS
 
-;L0DAA
+;0DAA
 .fn_disable_timer_2
         ; Disable Timer 2 on the User VIA
         ; by called the User VIA Interrupt Enable
@@ -475,7 +475,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Dsiplay the message for 1.6 seconds
         ; (80 * 20ms)
         LDX     #$50
-;L0DEC
+;0DEC
 .loop_wait_for_1600ms
         ; Wait for 20 ms
         JSR     fn_wait_for_vertical_sync
@@ -669,9 +669,45 @@ INCLUDE "repton-third-chord-note.asm"
         EQUB    $A9,$AA,$AB,$AC,$AD,$AE,$AF,$B0
 ;0EB0
         EQUB    $B1,$B2,$B3,$B4,$B5,$B6,$B7,$B8
-        EQUB    $B9,$BA,$BB,$64,$6E,$65,$6D,$64
-        EQUB    $65,$66,$67,$6A,$6B,$6D,$6E
-;0EBF        
+        EQUB    $B9,$BA,$BB,$64,$6E,$65,$6D
+;0EBF       
+.data_mini_map_chararacters 
+        ; Object id to mini-map characters lookup table
+        ; Object id is the nth position in the table
+        ;
+        ; $64   Character - top left hand side rounded brick
+        ; $65   Character - top right hand side rounded brick
+        ; $66   Character - bottom left hand side rounded brick
+        ; $67   Character - bottom right hand side rounded brick
+        ; $6A   Character - left hand brick edge
+        ; $6B   Character - right hand brick edge
+        ; $6D   Character - top brick edge
+        ; $6E   Character - bottom brick edge
+        ; $6F   Character - interior brick
+        ; $11   Solid curving top left side with yellow left edge
+        ; $12   Solid curving top right side with yellow right edge
+        ; $13   Solid curving bottom left side with yellow left edge
+        ; $14   Solid curving bottom right side with yellow right edge
+        ; $0D   Solid rectangle with yellow left edge
+        ; $0F   Solid rectangle with yellow right edge
+        ; $10   Solid rectangle with yellow top edge
+        ; $0E   Solid rectangle with yellow bottom edge
+        ; $0C   Solid rectangle no coloured edges
+        ; $70   Character - yellow red brick
+        ; $72   Character - four blocks
+        ; $75   Character - two vertical oval blocks
+        ; $76   Character - two horizontal oval blocks
+        ; $77   Character - inverted brick
+        ; $BD   Character - Safe
+        ; $24   Earth segment 3
+        ; $25   Earth segment 4
+        ; $69   Character - earth 2
+        ; $BE   Character - Key
+        ; $BF   Character - Egg
+        ; $C0   Character - Rock
+        ; $C3   Character - Diamond
+        ; $73   Black tile
+        EQUB    $64,$65,$66,$67,$6A,$6B,$6D,$6E        
         EQUB    $6F,$11,$12,$13,$14,$0D,$0F,$10
         EQUB    $0E,$0C,$70,$72,$75,$76,$77,$BD
         EQUB    $24,$25,$69,$BE,$BF,$C0,$C3,$73
@@ -730,7 +766,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Allow maskable interrupts
         CLI
 
-;L0FB6
+;0FB6
 .loop_wait_for_vsync
         ; This waits function waits up to 20 ms for an 
         ; interrupt from CA1 on the System VIA
@@ -761,9 +797,6 @@ INCLUDE "repton-third-chord-note.asm"
         ; Restore the processor flags
         PLP
         RTS
-;0FC7
-;...
-;calls 25a3
 
 ;0FC7
 .fn_check_if_high_score
@@ -923,7 +956,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; the player high score equals the lowest high
         ; score it will display congratulations too
 
-;L1020
+;1020
 .display_congratulations
         ; Set the cursor position to (0,15)
         LDX     #$00
@@ -977,13 +1010,18 @@ INCLUDE "repton-third-chord-note.asm"
         ;
         ; R = ((S + T1H) EOR T1C) + 2 * ((S + T1H) EOR T1C)
         ;
+        ; or more simply
+        ;
+        ; R = 3 * ((S + T1H) EOR T1C)
+        ;
         ; In BASIC (Note S starting value can be anything)
         ;
         ; 10 S = 20
         ; 20 T1H = ?&FE65
         ; 30 T1C = ?&FE64
-        ; 40 R = ((S + T1H) EOR T1C) + 2 * ((S + T1H) EOR T1C)
+        ; 40 R = 3 * ((S + T1H) EOR T1C)
         ; 50 PRINT ~R
+        ; 60 GOTO 20
         ;
         LDA     var_random_value
         ADC     SHEILA_USER_VIA_R5_T1C_H
@@ -995,14 +1033,14 @@ INCLUDE "repton-third-chord-note.asm"
         ; Note that $0902 is never read outside
         ; this sub-routine
         RTS
-;...
-;L1058
+
+;1058
 .end_play_music_sound
         ; Restore A the amplitude
         PLA
         RTS
 
-;L105A
+;105A
 .fn_play_music_sound
         ; On entry:
         ; $0000 contains the required sound channel
@@ -1056,7 +1094,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; sound block
         LDX     #$FF
 
-        ; This DOES do something as the 
+        ; This one line DOES do something as the 
         ; amplitude is set in play_sound
         ; to the sound parameter block location
         TAY
@@ -1069,7 +1107,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDX     #$00
         ; ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-; 107A
+;107A
 .play_sound
         ; Store Y in the sound block parameter
         ; MSB for amplitude - doesn't seem to 
@@ -1084,7 +1122,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$07
         JMP     OSWORD
 
-; 1085
+;1085
 .fn_read_key
         ; A contains the key to be read
         TAX
@@ -1102,7 +1140,7 @@ INCLUDE "repton-third-chord-note.asm"
         TYA
         RTS
 
-; 108F
+;108F
 .fn_define_logical_colour
 {
         ; Top four bits of A are the logical colour
@@ -1148,7 +1186,7 @@ INCLUDE "repton-third-chord-note.asm"
         JMP     OSWRCH
 }
 
-; 10B1
+;10B1
 .fn_calc_screen_address_from_x_y_pos
 {
         ; Screen is from $6000 - $7FFF
@@ -1183,13 +1221,13 @@ INCLUDE "repton-third-chord-note.asm"
         ; start of the screen my subtracting $2000
         SEC
         SBC     #$20
-;L10C1
+;10C1
 .end_calc__screen_address_from_x_y_pos
         TAY
         RTS
 }
 
-;L10C3
+;10C3
 .fn_check_sound_keys
         ; Check to see if the player has 
         ; asked for the sound to be switched off
@@ -1203,7 +1241,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Switch the sound status to off
         LDA     #$00
         STA     var_sound_status
-;L10CF
+;10CF
 .check_s_key
         ; Check to see if the player has 
         ; asked for the sound to be switched on
@@ -1216,11 +1254,11 @@ INCLUDE "repton-third-chord-note.asm"
         ; Switch the sound status to on
         LDA     #$01
         STA     var_sound_status
-;L10DB
+;10DB
 .end_check_sound_keys
         RTS
 
-;L10DC
+;10DC
 .fn_check_escape_key
         ; Check to see if escape has been pressed
         LDA     #$8F
@@ -1239,13 +1277,15 @@ INCLUDE "repton-third-chord-note.asm"
         STA     zp_screen_start_address_lsb
         LDA     #$60
         STA     zp_screen_start_address_msb
-        JMP     L1708        
-;...
-;L10F3
+
+        ; Kill repton
+        JMP     fn_kill_repton        
+
+;10F3
 .end_check_for_key_press
         RTS
 
-;L10F4
+;10F4
 .fn_check_for_map_key_press
         ; Check to see if the player has 
         ; asked for the map to be displayed
@@ -1274,53 +1314,88 @@ INCLUDE "repton-third-chord-note.asm"
         ; X 76 
         ; Y 77>
         LDA     #$00
-        STA     L0076
-        STA     L0077
+        STA     zp_map_x
+        STA     zp_map_y
+
+        ; Cache the current top left hand corner
+        ; of the visible screen
+        ; Cache the xpos
         LDA     zp_visible_screen_top_left_xpos
-        STA     L007C
-.L110F
+        STA     zp_visible_screen_top_left_xpos_cache
+
+
+        ; Cache the ypos
         LDA     zp_visible_screen_top_left_ypos
-.L1111
-        STA     L007D
+        STA     zp_visible_screen_top_left_ypos_cache
+
+        ; Reset the xpos and ypos to (0,0)
         LDA     #$00
         STA     zp_visible_screen_top_left_xpos
         STA     zp_visible_screen_top_left_ypos
-.L1119
-        LDX     L0076
-        LDY     L0077
+
+;1119
+.loop_display_map_object
+        ; Each map contains 32 x 32 objects e.g. 
+        ; Rock or Earth or Egg or solid wall etc
+        ; Loop through them all and draw them to the 
+        ; screen 
+
+        LDX     zp_map_x
+        LDY     zp_map_y
+
+        ; Lookup the object the is at (x,y)
         JSR     fn_lookup_screen_object_for_x_y
 
-        JSR     L1BEE
+        ; Lookup the display tile / character for the
+        ; current object id and display it on the map
+        JSR     fn_lookup_map_character_and_display
 
-        INC     L0076
-        LDA     L0076
-        ; 
+        INC     zp_map_x
+        LDA     zp_map_x
+
+        ; Check that x is less than 32
+        ; (the row length hasn't been exceeded)
         CMP     #$20
-        BNE     L1119
 
+        ; Display the next map object if < 32   
+        BNE     loop_display_map_object
+
+        ; Move to the next row and reset x to 0
         LDA     #$00
-        STA     L0076
-        INC     L0077
-        LDA     L0077
-        CMP     #$20
-        BNE     L1119
+        STA     zp_map_x
+        INC     zp_map_y
 
+        ; Check that y is less than 32
+        ; (the row length hasn't been exceeded)        
+        LDA     zp_map_y
+        CMP     #$20
+
+        ; Display the next map object if < 32
+        BNE     loop_display_map_object
+
+        ; Wait for the player to press the 
+        ; space bar to return to the status screen
         JSR     loop_wait_for_space_bar_on_screen
 
-        ; Spare bytes
+        ; Spare bytes - 4
         NOP
         NOP
         NOP
         NOP
-        LDA     L007C
+
+        ; Restore the cached xpos and ypos for the
+        ; visible game screen top left corner
+        LDA     zp_visible_screen_top_left_xpos_cache
         STA     zp_visible_screen_top_left_xpos
-        LDA     L007D
+        LDA     zp_visible_screen_top_left_ypos_cache
         STA     zp_visible_screen_top_left_ypos
         PLA
         PLA
-        JMP     L17B5
-;...
-;L114B
+
+        ; Display the Repton status screen
+        JMP     fn_display_repton_start_screen
+
+;114B
 .fn_write_3_byte_display_value_to_screen
         ; Each value to display is 3 bytes
         ; and handled in the order of MSB MLSB LSB 
@@ -1414,7 +1489,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$30
         JSR     fn_print_character_to_screen
 
-;L1190
+;1190
 .end_write_3_byte_display_value_to_screen
         RTS
 
@@ -1433,7 +1508,7 @@ INCLUDE "repton-third-chord-note.asm"
         CPX     #$00
         BEQ     end_print_digit_to_screen
 
-;L119B
+;119B
 .print_digit_to_screen
         ; Non-zero digit has or is already been
         ; written to the screen so update the flag 
@@ -1448,7 +1523,7 @@ INCLUDE "repton-third-chord-note.asm"
         ADC     #$30
         JMP     fn_print_character_to_screen
 
-;L11A5
+;11A5
 .end_print_digit_to_screen
         RTS        
 
@@ -1463,7 +1538,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; the string
         LDA     #$00
         STA     zp_string_to_display_current_byte
-;L11AE
+;11AE
 .loop_get_next_string_byte
         LDY     zp_string_to_display_current_byte
         LDA     (zp_object_or_string_address_lsb),Y
@@ -1480,7 +1555,7 @@ INCLUDE "repton-third-chord-note.asm"
         INC     zp_string_to_display_current_byte
         BNE     loop_get_next_string_byte
 
-;L11BD
+;11BD
 .end_write_string_to_screen
         RTS
 
@@ -1535,7 +1610,7 @@ INCLUDE "repton-third-chord-note.asm"
         STA     zp_password_cursor_xpos
         JMP     move_to_next_y_pos
 
-;L11CB
+;11CB
 .check_if_delete_character
         ; Check to see if the current character to process
         ; is Delete - if not branch ahead
@@ -1564,7 +1639,7 @@ INCLUDE "repton-third-chord-note.asm"
         DEC     zp_password_cursor_xpos
         JMP     end_print_character_to_screen
 
-;L11DF
+;11DF
 .check_if_user_defined_character
         ; Check if it's a normal ASCII character
         ; if so, branch ahead
@@ -1591,7 +1666,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         JMP     end_print_character_to_screen
 
-;L11EE
+;11EE
 .check_if_normal_character
         ; Check to see if it's in the printable range
         ; for normal characters so above $20/32 - previous
@@ -1624,7 +1699,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Reset the x position to the beginning of the line
         LDA     #$00
         STA     zp_password_cursor_xpos
-;L1208
+;1208
 .move_to_next_y_pos
         INC     zp_password_cursor_ypos
         LDA     zp_password_cursor_ypos
@@ -1644,7 +1719,7 @@ INCLUDE "repton-third-chord-note.asm"
         RTS
 
 
-;L1216
+;1216
 .fn_print_character_and_increment_xpos
         PHP
         NOP
@@ -1653,7 +1728,7 @@ INCLUDE "repton-third-chord-note.asm"
         JMP     move_to_next_x_pos
 ;...
 
-;L16E2
+;16E2
 .fn_wait_120ms
 
         ; Wait 6 * 20 ms = 120 ms
@@ -1661,7 +1736,7 @@ INCLUDE "repton-third-chord-note.asm"
         
         ; Loop around 6 times waiting
         ; for vertical sync (up to 120ms)
-;L16E4
+;16E4
 .loop_wait_for_vsync_fn
         ; Wait up to 20ms
         JSR     fn_wait_for_vertical_sync
@@ -1672,7 +1747,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         RTS
 
-;L16EB
+;16EB
 .fn_decrement_remaining_time
         ; Set the processor into BCD mode
         ; for time remaining manipulation
@@ -1709,9 +1784,8 @@ INCLUDE "repton-third-chord-note.asm"
         ; Switch off binary coded decimal mode
         CLD
         RTS        
-;...
 
-;L1708
+;1708
 .fn_kill_repton
         ; Switch off Binary Coded Decimal mode
         CLD
@@ -1818,7 +1892,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Reset the game
         JMP     fn_reset_and_show_start_screen
 
-;L1788
+;1788
 .player_out_of_lives
         ; Player has exhausted all my lives
         ; Did they achieve a high score?
@@ -1831,6 +1905,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Number of times to wait for 20ms
         ; So wait fro 30 * 20ms = 600ms
         LDX     #$1E
+        
 ;1790
 .loop_wait_another_20ms
         ; Wait for 20ms (until a vsync occurs)
@@ -1844,7 +1919,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Initialise game
         JMP     fn_initialise_game_after_restart_no_high_score
 
-;L1799
+;1799
 .fn_write_r_to_restart
         ; Set the cursor position to (2,31)
         LDY     #$1F
@@ -1863,7 +1938,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Write the string
         JSR     fn_write_string_to_screen
 
-;L17A8
+;17A8
 .fn_set_press_escape_lsb
         ; Set the LSB for the "Press escape to
         ; kill yourself" string
@@ -1886,7 +1961,7 @@ INCLUDE "repton-third-chord-note.asm"
         NOP 
         NOP
 
-;L17AF
+;17AF
 .fn_update_high_score_reset_music
         JSR     fn_check_and_update_high_score
 
@@ -2242,7 +2317,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         JMP     write_screen_letter_to_screen
 
-;L18E5
+;18E5
 .fn_write_plenty_to_screen
         ; Write "Plenty!" as the numbe of diamonds
         ; "P"
@@ -2283,7 +2358,7 @@ INCLUDE "repton-third-chord-note.asm"
         ADC     #$41
         JSR     fn_print_character_to_screen
 
-;L1919
+;1919
 .write_sound_status_to_screen
         ; Set the cursor poxition to (19,22)
         ; to position it at after "Sound : "
@@ -2322,7 +2397,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$66
         JSR     fn_print_character_to_screen
 
-;L1947
+;1947
 .after_sound_status
         JSR     fn_write_music_status_and_pwd_to_screen
 
@@ -2347,7 +2422,7 @@ INCLUDE "repton-third-chord-note.asm"
 .L195A
         JMP     L2625
 
-;L195D
+;195D
 .fn_add_to_score 
         ; Add whatever is in A to the score
         ; 
@@ -2391,7 +2466,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Repton is made of four body parts (see above)
         LDA     #$04
         STA     zp_sprite_parts_to_copy_or_blank
-;L1986
+;1986
 .loop_blank_next_tile_byte
         ; Y is used to copy all the horizontal
         ; columns for the sprite in particular part
@@ -2401,7 +2476,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Head, torso, legs, feet        
         LDX     #$00
 
-;L198A
+;198A
 .loop_blank_next_tile_byte
         ; Blank a byte of data on the screen
         LDA     #$00
@@ -2433,7 +2508,7 @@ INCLUDE "repton-third-chord-note.asm"
         SEC
         SBC     #$20
         STA     zp_tile_load_address_msb
-;L19A5
+;19A5
 .skip_memory_subtraction_for_blank
         ; Check if 4 columns of 8 bytes have been blanked
         ; this represents a complete body part or sprite part
@@ -2461,7 +2536,7 @@ INCLUDE "repton-third-chord-note.asm"
         RTS
 
 ;...
-;L19BA
+;19BA
 .fn_lookup_repton_sprite_and_display
         ; Get the start address of the current Repton
         ; animation sprite
@@ -2488,7 +2563,7 @@ INCLUDE "repton-third-chord-note.asm"
         STA     zp_screen_write_address_msb
         JMP     fn_display_sprite
 
-;L19CA
+;19CA
 .fn_display_sprite
         ; Each sprite is 4 bytes wide and 32 bytes high
         ; 4 * 32 = 128 bytes
@@ -2526,7 +2601,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Repton is made of four body parts (see above)
         LDA     #$04
         STA     zp_sprite_parts_to_copy_or_blank
-;L19D9
+;19D9
 .copy_4_same_row_tiles_to_screen
         ; Y is used to copy all the horizontal
         ; columns for the sprite in particular part
@@ -2535,7 +2610,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; X is used to copy all four sprite parts
         ; Head, torso, legs, feet
         LDX     #$00
-;L19DD
+;19DD
         ; Copy 8 bytes
 .loop_copy_next_tile_byte
         ; Copy a byte of data to the screen
@@ -2568,7 +2643,7 @@ INCLUDE "repton-third-chord-note.asm"
         SEC
         SBC     #$20
         STA     zp_tile_load_address_msb
-;L19F8
+;19F8
 .skip_memory_subtraction
         ; Check if 4 columns of 8 bytes have been copied
         ; this represents a complete body part or sprite part
@@ -2601,7 +2676,7 @@ INCLUDE "repton-third-chord-note.asm"
         SEC
         SBC     #$20
         STA     zp_tile_load_address_msb
-;L1A15
+;1A15
 .skip_memory_subtraction_2
         ; Any remaining sprite parts? If so loop back
         DEC     zp_sprite_parts_to_copy_or_blank
@@ -2786,7 +2861,7 @@ INCLUDE "repton-third-chord-note.asm"
         RTS        
 ;...
 
-;L1B4B
+;1B4B
 .use_default_off_screen_tile
         ; Default tile to use for off 
         ; game screen areas ($15/20)
@@ -3034,7 +3109,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; current (xpos,ypos)
         RTS
 ;...
-;L1BB4
+;1BB4
 .set_default_off_screen_object
         ; Set the string to display to $E0E0 (garbage)
         ; if beyond the end of a row or beyond
@@ -3046,7 +3121,7 @@ INCLUDE "repton-third-chord-note.asm"
         RTS
 
 
-;L1BBD
+;1BBD
 .fn_lookup_screen_object_for_x_y
         ; Looks up object using (x,y) not (xpos,ypos)
         ; i.e. 32 x 32 co-ordinates
@@ -3113,29 +3188,57 @@ INCLUDE "repton-third-chord-note.asm"
         PLA
         RTS
 
-;L1BEC
+;1BEC
 .end_display_tile
         ; Reload the current tile from the stack
         ; Actually just clears the value from the stack
         PLA
         RTS
 
-.L1BEE
-        STX     zp_screen_write_address_lsb
+;1BEE
+.fn_lookup_map_character_and_display
+        ; Cache the x coordinate
+        STX     zp_map_x_cache
+
+        ; (Defensively) make sure the object id
+        ; is < 32 for the lookup table for the mini
+        ; map character.  So only keep the bottom
+        ; 5 bits by ANDing with 0001 1111 ($1F)
         AND     #$1F
         TAX
-        LDA     L0EBF,X
-        LDX     zp_screen_write_address_lsb
+
+        ; Get the mini-map character id to use
+        ; for the current object id
+        LDA     data_mini_map_chararacters,X
+
+        ; Restore the x coordinate
+        LDX     zp_map_x_cache
+
+        ; Display the character on screen in the 
+        ; position marketed by X and Y
         JMP     fn_display_tile
 
-;L1BFB
+;1BFB
 .fn_display_tile
         ; Preserve A - on entry it contains the 
         ; tile to write to the screen
         PHA
-        TXA
 
-        ; 
+        ; The display tile routine works assuming a 
+        ; a top left corner of 0,0 hence, the x and y
+        ; coordinates need to be adjusted to 0,0.  This
+        ; is performed by taking the desired x and y and 
+        ; subtracing the top left co-ordinates from them
+        ;
+        ; So if (topleftx, toplefty) is (2,4)
+        ;
+        ; And the drawing co-ordinate is (15,19)
+        ;
+        ; Then the absolute position from the top left of
+        ; the screen would be (15-2,19-4) = (13,15)
+
+        ; Adjust the X coordinaet
+        TXA
         SEC
         SBC     zp_visible_screen_top_left_xpos
         TAX
@@ -3145,10 +3248,12 @@ INCLUDE "repton-third-chord-note.asm"
         CPX     #$20
         BCS     end_display_tile
 
+        ; Adjust the Y coordinate
         TYA
         SEC
         SBC     zp_visible_screen_top_left_ypos
         TAY
+
         ; If the ypos is beyond the end of the row
         ; then don't do anything        
         CPY     #$20
@@ -3162,7 +3267,7 @@ INCLUDE "repton-third-chord-note.asm"
         STX     zp_screen_write_address_lsb
         STY     zp_screen_write_address_msb
 
-        ; Redundant?
+        ; Redundant? Spare bytes - 2
         PLA
         PHA
 
@@ -3175,12 +3280,16 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Calculate tile load address
         ; Tile load address = (tile number * 8) + $2FC0        
+
+        ; Multiply by 8
         ASL     A
         ROL     zp_tile_load_address_msb
         ASL     A
         ROL     zp_tile_load_address_msb
         ASL     A
         ROL     zp_tile_load_address_msb
+
+        ; Add $2FC0
         CLC
         ADC     #LO(data_tiles)
         STA     zp_tile_load_address_lsb
@@ -3190,7 +3299,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Copy the tile to the screen (each tile is 8 bytes)
         LDY     #$07
-;L1C32
+;1C32
 .loop_copy_tile
         ; Copy the tile to the screen
         ; Each tile is 8 bytes so loop to copy 
@@ -3203,7 +3312,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         RTS        
 
-;L1C3A
+;1C3A
 .fn_write_tile_to_screen
 {
         ; Preserve A - on entry it contains the 
@@ -3243,7 +3352,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Copy the tile to the screen (each tile is 8 bytes)
         LDY     #$07
-;L1C61
+;1C61
 .loop_get_next_tile_byte
         ; Get the yth byte of the tile
         LDA     (zp_tile_load_address_lsb),Y
@@ -3265,7 +3374,7 @@ INCLUDE "repton-third-chord-note.asm"
 }
 ;...
 
-;L1E4C
+;1E4C
 .fn_get_nth_bit_from_memory
         ; Returns the nth bit from memory from
         ; the map data that starts at $4200 using
@@ -3348,11 +3457,11 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Otherwise return $FF to indicate bit is set
         LDA     #$FF
-;L1E74
+;1E74
 .end_get_nth_bit_from_memory
         RTS
 
-;L1E75
+;1E75
 .fn_get_next_map_object
         ; X and Y get the nth object for the current map
         ;    X is 0 to 255
@@ -3523,7 +3632,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     zp_object_id
         RTS
 
-;L1EAE
+;1EAE
 .fn_get_next_map_object_bit
         ;0072
         ; The values in the follow locations
@@ -3553,7 +3662,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; If the LSB carried then add 1 to the MSB
         INC     zp_object_index_msb
-;L1EBE
+;1EBE
 .end_decode_map_object
         RTS
 
@@ -3591,7 +3700,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; to get all 1024 (4 x 256) objects
         LDA     #$04
         STA     zp_decode_map_counter_msb
-;L1ED3
+;1ED3
 .get_and_decode_nth_map_object
         ; Get the nth object from the encoded (compressed)
         ; map so it can be copied into the current map
@@ -3612,7 +3721,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; It's a diamond so increment
         INC     var_number_diamonds_left
-;L1EE5
+;1EE5
 .check_if_object_is_a_safe
         ; If the current object is a Safe ($17)
         ; increment the number of diamonds to collect
@@ -3622,7 +3731,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; It's a safe so increment
         INC     var_number_diamonds_left
 
-;L1EEC
+;1EEC
 .skip_number_diamonds_left_increment
         ; Increment to get the next map object
         ; if the LSB carries than add 1 to the MSB
@@ -3631,7 +3740,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Increment the MSB as the LSB > 255
         INC     zp_nth_object_index_msb
-;L1EF2
+;1EF2
 .skip_nth_object_index_msb_increment
         ; A map contains 1024 object ids - these are
         ; retrieved by iterating over 4 * 256 object ids
@@ -3647,7 +3756,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Increment the MSB
         INC     zp_decode_map_counter_msb
-;L1EF8
+;1EF8
 .skip_decode_map_counter_msb_increment
         ; Have all 1024 map object ids been retrieved
         ; and copied into the working cache?
@@ -3663,7 +3772,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Reset $0980-$09FF to zero
         LDX     #$10
         ; TODO give this label a better name
-;L1F00
+;1F00
 .reset_cache
         ; Set current byte to zero
         LDA     #$00
@@ -3676,7 +3785,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         RTS
 
-;L1F09
+;1F09
 .fn_check_repton_movement
         ; Reset the vertical and horiztonal 
         ; movement keypress indicators to zero
@@ -3731,7 +3840,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; change the value to $01 which indicates
         ; repton is moving up
         INC     var_repton_vertical_direction
-;L1F3A
+;1F3A
 .check_down_key
         ; Check the object below Repton 
         ; to see if he can move there - if he can 
@@ -3775,7 +3884,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; change the value to $FF which indicates
         ; repton is moving up
         DEC     var_repton_vertical_direction
-;L1F63
+;1F63
 .check_left_key
         ; Check to see if the Z key is being pressed
         ; (Move Repton Left)
@@ -3789,7 +3898,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; change the value to $FF which indicates
         ; repton is moving left
         DEC     var_repton_horizontal_direction
-;L1F6D
+;1F6D
 .check_right_key
         ; Check to see if the X key is being pressed
         ; (Move Repton Right)
@@ -3802,7 +3911,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; change the value to $01 which indicates
         ; repton is moving right
         INC     var_repton_horizontal_direction
-;L1F77
+;1F77
 .cancel_horiztonal_if_vertical
         ; If Repton is moving vertically, then
         ; cancel the horizontal movement
@@ -3814,11 +3923,11 @@ INCLUDE "repton-third-chord-note.asm"
         ; is moving vertically
         LDA     #$00
         STA     var_repton_horizontal_direction
-;L1F81
+;1F81
 .end_check_repton_movement
         RTS
 
-;L1F82
+;1F82
 .fn_dissolve_screen
         ; Disable Vsync event and change the palette
         NOP
@@ -3826,7 +3935,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; This loop is used to iterate over the entire screen
         ; N times as defined by the value in 
-;L1F86
+;1F86
 .loop_dissolve_entire_screen
         ; Generates a random value using the User VIA
         ; Timer 1
@@ -3860,7 +3969,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         STA     var_random_byte_source_lsb
         LDY     #$00
-;L1F9E
+;1F9E
 .loop_dissolve_screen_byte
         ; Load the current byte on the screen
         LDA     (zp_screen_write_address_lsb),Y
@@ -3985,7 +4094,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Reset the game
         JSR     fn_reset_game
 
-;L2008
+;2008
 .fn_reset_and_show_start_screen
         ; This is called when a player loses
         ; a life but still has some left AND
@@ -4019,7 +4128,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$02
         STA     zp_visible_screen_top_left_ypos
 
-;L2027
+;2027
 .fn_return_pressed_from_game
         ; Start screen address is $6000 before scrolling
         LDA     #$00
@@ -4076,7 +4185,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; top left corner of the screen
         LDA     zp_visible_screen_top_left_ypos
         STA     zp_visible_screen_top_left_ypos_cache
-;L204A
+;204A
 .loop_move_to_next_row
         ; Number of columns to draw objects for - game
         ; screen is 32 x 32 so set this to 32
@@ -4087,7 +4196,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; top left corner of the screen   
         LDA     zp_visible_screen_top_left_xpos
         STA     zp_visible_screen_top_left_xpos_cache
-;L2052
+;2052
 .loop_draw_row_tiles
         ; Load top left corner visible screen 
         ; (xpos,ypos) into X and Y
@@ -4206,7 +4315,7 @@ INCLUDE "repton-third-chord-note.asm"
 .move_repton_up
         JSR     L1CA1
 
-;L2097
+;2097
 .check_horizontal_movement
         ; Is the player trying to move repton
         ; horizontally?  If not, branch ahead
@@ -4475,7 +4584,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Spare bytes - 2
         EQUB    $00, $00
-;L2158
+;2158
 .fn_check_r_d_w_keys
         ; Check to see if the player has 
         ; asked for the music to be switched off
@@ -4489,7 +4598,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Set music to off
         LDA     #$00
         STA     var_music_status
-;L2164
+;2164
 .check_d_key
 
         ; Check to see if the player has 
@@ -4504,7 +4613,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Set music to on
         LDA     #$01
         STA     var_music_status
-;L2170
+;2170
 .check_r_key
         ; Check to see if the player has 
         ; asked for the music to be switched on
@@ -4518,7 +4627,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Restart the game
         JMP     fn_restart_game
 
-;L217A
+;217A
 .set_combined_sound_music
         ; Set the combined sound and music status
         LDA     var_sound_status
@@ -4553,7 +4662,7 @@ INCLUDE "repton-third-chord-note.asm"
         NOP
         NOP
         NOP
-;L219F
+;219F
 .fn_show_high_score_repton_logo
         ; Reset the screen start address to $6000
         LDA     #$00
@@ -4581,7 +4690,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; and displaying the repton logo to zero 
         LDA     #$00
         STA     zp_screen_write_total_byte_counter
-;L21BA
+;21BA
 .loop_get_next_repton_logo_byte_hs
         LDY     zp_screen_write_total_byte_counter
         LDA     data_repton_logo,Y
@@ -4599,13 +4708,13 @@ INCLUDE "repton-third-chord-note.asm"
         RTS
 ;...
 
-;L21D0
+;21D0
 .fn_play_intro_music
         ; Reset the sound note index to the
         ; start of the tune
         LDA     #$00
         STA     zp_sound_note_index
-;L21D4
+;21D4
 .play_next_intro_chord
         ; Load the index into Y as it'll
         ; be used to retrieve the current note
@@ -4726,7 +4835,7 @@ INCLUDE "repton-third-chord-note.asm"
 ;...
 
 
-;L2231
+;2231
 .fn_write_string_and_set_escape_lsb
         ; Display the string
         JSR     fn_write_string_to_screen
@@ -4805,7 +4914,7 @@ INCLUDE "repton-music-intro-notes.asm"
         LDA     #$00
         STA     var_score_index
 
-;L2346
+;2346
 .display_next_high_score_pos
         
         LDA     #$00
@@ -4916,7 +5025,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; because each score is 3 bytes
         LDX     #$00
         LDA     #$00
-;L2397
+;2397
 .loop_generate_score_offsets
         STA     data_sorted_score_offsets,X
         CLC
@@ -4931,7 +5040,7 @@ INCLUDE "repton-music-intro-notes.asm"
         LDA     #$00
         STA     var_bubble_sort_pass     
 
-;L23A7
+;23A7
 .bubble_sort_next_pass
 
         ; BUBBLE SORT ALGORITHM
@@ -4951,7 +5060,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; so it'll always be n^2
         LDA     #$00
         STA     var_score_index
-;L23AC
+;23AC
 .sort_score_lookup_table
 
         ; 2BD9 = offsets
@@ -5013,7 +5122,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; If LSBs are not the same branch
         BNE     .no_flip_score_lookup_positions
 
-;L23D6
+;23D6
 .flip_score_lookup_positions
         ; Flip the positions of the scores
         LDX     var_score_index
@@ -5024,7 +5133,7 @@ INCLUDE "repton-music-intro-notes.asm"
         TYA
         STA     data_sorted_score_offsets+1,X
 
-;L23E7
+;23E7
 .no_flip_score_lookup_positions
         ; Is the nth score sorted?
         ; If not lookup back
@@ -5043,7 +5152,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Reset the nth score index
         LDA     #$00
         STA     var_score_index
-;L2400
+;2400
 .display_next_high_score_name
         LDX     var_score_index
         LDA     data_sorted_score_offsets,X
@@ -5129,7 +5238,7 @@ INCLUDE "repton-music-intro-notes.asm"
 .text_screen_complete_amazing        
         EQUS    $81,"Amazing!  Now try again.",$0D
 ;...
-;L24B3
+;24B3
 .fn_reset_music_and_draw_repton
         ; Reset the music tune to start at the beginning
         LDA     #$FF
@@ -5355,7 +5464,7 @@ INCLUDE "repton-music-intro-notes.asm"
 .end_check_if_nearly_out_of_time
         JMP     fn_check_sound_keys
 
-;L2591
+;2591
 .fn_add_one_to_lives_left_for_display
         ; Lives are stored as zero based (0 is one life left)
         ; but to display the value then one has to be added
@@ -5376,8 +5485,6 @@ INCLUDE "repton-music-intro-notes.asm"
         LDY     #$08
         LDX     #$05
         RTS        
-;...
-
 
 ;25A3
 .fn_display_repton_logo_for_high_score_entry
@@ -5411,7 +5518,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; and displaying the repton logo to zero 
         LDA     #$00
         STA     zp_screen_write_total_byte_counter
-;L25B6
+;25B6
 .loop_get_next_repton_logo_char
         ; Get the current byte / tile and 
         ; write it to the screen
@@ -5432,7 +5539,7 @@ INCLUDE "repton-music-intro-notes.asm"
         RTS
 
 
-;L25D0
+;25D0
 .fn_display_p_or_r_option
         ; Check to see if there are still four lives left
         LDA     var_lives_left
@@ -5475,7 +5582,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Display the spring and set the LSB for the
         ; next string to write to be the Press escape to kill yourself
         JMP     fn_write_string_and_set_escape_lsb
-;L25F4
+;25F4
 .game_started
         JMP     fn_write_r_to_restart
 
@@ -5555,15 +5662,15 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Initialise the game
         JMP     fn_initialise_game
 
-;L264D
+;264D
 .fn_set_high_score_mlsb_and_start_screen
         LDA     #$80
         JSR     fn_set_start_screen_and_reset_game
 
-;L2652
+;2652
 .end_check_if_intro_music_should_play
         RTS        
-;L2653
+;2653
 .fn_check_if_intro_music_should_play
         ; Check to see if there are still four lives left
         LDA     var_lives_left
@@ -5589,7 +5696,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Play the short intro music and return
         JMP     fn_play_intro_music   
 
-;L266B
+;266B
 .fn_set_start_screen_and_reset_game
         ; Set the middle high score digits to whatever
         ; is passed in A ($80)
@@ -5656,7 +5763,7 @@ INCLUDE "repton-music-intro-notes.asm"
         STA     var_player_started_on_screen_x
         RTS
 
-;L26A7
+;26A7
 .fn_restart_game
         ; Restart was pressed so set the flag
         ; so that the high score screen is not 
@@ -5784,7 +5891,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; graphics onto the screen - it's 
         ; 3 pages long        
         LDY     #$00
-;L2A64
+;2A64
 .loop_repton_finished_logo
         LDA     L2700,Y
         STA     L6500,Y
@@ -5842,7 +5949,7 @@ INCLUDE "repton-music-intro-notes.asm"
 
         RTS
 
-;L2AAB
+;2AAB
 .fn_oswrch_and_reset_screen_start_addr
         ; OSWRCH &0C / VDU 12 - clear text area
         ; and put cursor in home position
@@ -5874,7 +5981,7 @@ INCLUDE "repton-music-intro-notes.asm"
         LDX     #$00
         JMP     OSBYTE
 
-;L2AC2
+;2AC2
 .fn_check_and_update_high_score
         ; If the score MSB isn't greater than the 
         ; high score MSB do nothing
@@ -5918,11 +6025,11 @@ INCLUDE "repton-music-intro-notes.asm"
         STA     var_high_score_mlsb
         LDA     var_score_lsb
         STA     var_high_score_lsb
-;L2AF2
+;2AF2
 .end_check_and_update_high_score
         RTS
 
-;L2AF3
+;2AF3
 .fn_compare_user_password_character
         ; Compare current (Y) password character
         ; against user input
@@ -6003,7 +6110,7 @@ INCLUDE "repton-music-intro-notes.asm"
 
         RTS
 
-;L2C0B
+;2C0B
         ; Spare bytes - 10
         NOP
         NOP
@@ -6082,7 +6189,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; before trying to match passwords
         LDA     #$00
         STA     zp_screen_password_lookup_index
-;L2C55
+;2C55
 .loop_get_next_screen_password_and_compare
         LDX     zp_screen_password_lookup_index
         LDA     data_password_lsb_lookup_table,X
@@ -6094,7 +6201,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; 22 characters long, screen passwords are max
         ; 11 including trailing CR
         LDY     #$0B
-;L2C62
+;2C62
 .loop_compare_next_password_character
         ; Get the actual screen password current
         ; character to compare against player input
@@ -6114,7 +6221,7 @@ INCLUDE "repton-music-intro-notes.asm"
         LDA     zp_screen_password_lookup_index
         JSR     fn_set_start_and_started_on_screen
 
-;L2C71
+;2C71
 .password_check_complete
         ; Move to the next screen's password
         ; for comparison
@@ -6262,7 +6369,7 @@ INCLUDE "repton-music-intro-notes.asm"
         EQUB    #LO(text_password_screen_k)
         EQUB    #LO(text_password_screen_l)
 
-;L2DF4
+;2DF4
 .fn_write_password_to_screen
         JSR     fn_write_string_to_screen
         JMP     L10F4
@@ -6285,7 +6392,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; the high nibble colours
         LDA     #$F0
         STA     zp_screen_colour_mask
-;L2E0C
+;2E0C
 .read_next_password_character
         ; Wait and read character input
         JSR     OSRDCH
@@ -6308,7 +6415,7 @@ INCLUDE "repton-music-intro-notes.asm"
         JMP     read_next_password_character
         ; ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-;L2E1B
+;2E1B
 .password_check_for_delete
         ; Check to see if delete key (&7F / 127) was pressed
         ; if not, branch ahead
@@ -6340,7 +6447,7 @@ INCLUDE "repton-music-intro-notes.asm"
 
 
 
-;L2E31
+;2E31
 .password_check_for_return
         ; Check to see if Return was pressed
         ; if so, branch ahead and set remaining
@@ -6392,7 +6499,7 @@ INCLUDE "repton-music-intro-notes.asm"
         CMP     #$5B
         BCS     read_next_password_character
 
-;L2E4D
+;2E4D
 .check_password_length_and_display
         STA     zp_password_current_character_cache
         ; Check the player hasn't entered more than 22
@@ -6415,7 +6522,7 @@ INCLUDE "repton-music-intro-notes.asm"
         JMP     read_next_password_character
 
 ;...
-;L2E64
+;2E64
 .fn_set_rest_of_password_to_crs
         ; Entered passwords in memory can be up to 24 
         ; characters long - set all characters to carriage
@@ -6423,7 +6530,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; memory buffer
         LDX     zp_password_character_count
         LDA     #$0D
-;L2E68
+;2E68
 .loop_set_carriage_return
         ; Set the current position to a CR
         STA     data_player_entered_password_or_name,X
@@ -6438,7 +6545,7 @@ INCLUDE "repton-music-intro-notes.asm"
         RTS
 ;...
 
-;L2E73
+;2E73
 .fn_write_sound_music_password_to_screen
         ; Write the "Sound : " string to the screen
         JSR     fn_write_string_to_screen
@@ -6493,7 +6600,7 @@ INCLUDE "repton-music-intro-notes.asm"
 .text_password
         EQUS    "Password :",$0D
 
-;L2EB3
+;2EB3
 .fn_write_music_status_and_pwd_to_screen
         ; Set the cursor position to (19,24)
         ; to position it at after "Music : "
@@ -6520,7 +6627,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; string
         LDA     #LO(text_on)
         STA     zp_object_or_string_address_lsb
-;L2EC8
+;2EC8
 .write_music_status
         JSR     fn_write_string_to_screen
 
