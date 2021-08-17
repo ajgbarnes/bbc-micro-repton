@@ -14,6 +14,9 @@ OSWORD = $FFF1
 ; Perfrom miscellaneous OS operation using registers to pass parameters
 OSBYTE = $FFF4
 
+SHEILA_6845_ADDRESS=$FE00
+SHEILA_6845_DATA=$FE01
+
 ; Sheila User Via Timer 2 Control low-order counter
 SHEILA_USER_VIA_R5_T1C_L = $FE64
 ; Sheila User Via Timer 2 Control high-order counter
@@ -407,6 +410,7 @@ INCLUDE "repton-third-chord-note.asm"
         EQUB    $00,$00
 
 .L0DB4
+; TODO
         JSR     fn_play_music_sound
 
         JMP     fn_disable_vsync_event_only
@@ -506,7 +510,6 @@ INCLUDE "repton-third-chord-note.asm"
 ;0E00
         ; Spare bytes - 2
         EQUB    $0D,$FF
-;...
 
         ; Table of Repton poses - based on the value of $0905
         ; $3600 - Repton Left hand up
@@ -588,24 +591,33 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;0E36
 .data_map_object_required_bit_mask
-; This table is used to look up the required bit
-; when decompressing an object from the stored
-; maps 
-; 
-; Bit Bit mask
-; --- --------
-;  0  00000001 ($01)
-;  1  00000010 ($02)
-;  2  00000100 ($04)
-;  3  00001000 ($08)
-;  4  00010000 ($10)
-;  5  00100000 ($20)
-;  6  01000000 ($40)
-;  7  10000000 ($80)
+        ; This table is used to look up the required bit
+        ; when decompressing an object from the stored
+        ;  and encoded maps 
+        ; 
+        ; Bit Bit mask
+        ; --- --------
+        ;  0  00000001 ($01)
+        ;  1  00000010 ($02)
+        ;  2  00000100 ($04)
+        ;  3  00001000 ($08)
+        ;  4  00010000 ($10)
+        ;  5  00100000 ($20)
+        ;  6  01000000 ($40)
+        ;  7  10000000 ($80)
         EQUB    $01,$02,$04,$08,$10,$20,$40,$80      
 ;0E3E
-        ; TODO - used when a rock drops
-        EQUB    $00,$C0,$80,$40,$00,$03,$02,$01
+.data_partial_sprite_offset_lookup_lsb
+        ; Used when drawing moving rocks or eggs or monsters
+        ; on the screen to find the partial starting point 
+        ; offset for the sprite - for example, if a rock is
+        ; only half on the top of the screen then add $0280
+        ; to the sprite address to get to the start of the second
+        ; half of the rock
+        EQUB    $00,$C0,$80,$40
+;0E42
+.data_partial_sprite_offset_lookup_msb
+        EQUB    $00,$03,$02,$01
 
 ;0E46
 .envelope_1
@@ -1030,8 +1042,9 @@ INCLUDE "repton-third-chord-note.asm"
         ROL     A
         ADC     var_random_value
         STA     var_random_value
+
         ; Note that $0902 is never read outside
-        ; this sub-routine
+        ; this sub-routine, A is used on return
         RTS
 
 ;1058
@@ -1142,7 +1155,6 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;108F
 .fn_define_logical_colour
-{
         ; Top four bits of A are the logical colour
         ; to change, bottom four bits are the physical
         ; colour to set
@@ -1184,11 +1196,9 @@ INCLUDE "repton-third-chord-note.asm"
         JSR     OSWRCH
         JSR     OSWRCH
         JMP     OSWRCH
-}
 
 ;10B1
 .fn_calc_screen_address_from_x_y_pos
-{
         ; Screen is from $6000 - $7FFF
         ; Screen write address = screen start adress + (xpos * 8) + (y *256)
         ; On entry:
@@ -1225,7 +1235,6 @@ INCLUDE "repton-third-chord-note.asm"
 .end_calc__screen_address_from_x_y_pos
         TAY
         RTS
-}
 
 ;10C3
 .fn_check_sound_keys
@@ -1493,7 +1502,7 @@ INCLUDE "repton-third-chord-note.asm"
 .end_write_3_byte_display_value_to_screen
         RTS
 
-.L1191
+;1191
 .fn_print_digit_to_screen
         ; Digit will always be 0-9 (Binary Coded Decimal)
         ; If it's non-zero then jump ahead and print it
@@ -1591,7 +1600,6 @@ INCLUDE "repton-third-chord-note.asm"
         ; $61 - $7A - a-z
         ; $7B - $7E - not allowed
         ; $7F - delete
-
 
         ; Push the status register onto the stack
         ; so processing isn't interrupting on whatever
@@ -1727,6 +1735,8 @@ INCLUDE "repton-third-chord-note.asm"
 
         JMP     move_to_next_x_pos
 ;...
+; TODO FOUR PAGES
+;...
 
 ;16E2
 .fn_wait_120ms
@@ -1847,17 +1857,24 @@ INCLUDE "repton-third-chord-note.asm"
         ; for 120 ms
         JSR     fn_wait_120ms
 
+        ; Repton is in the middle of the screen
+        ; at an offset of (14,14) so add
+        ; 14 to xpos to get his position
         LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$0E
         TAX
-        LDA     zp_visible_screen_top_left_ypos
 
+        ; Repton is in the middle of the screen
+        ; at an offset of (14,14) so add
+        ; 14 to ypos to get his position
+        LDA     zp_visible_screen_top_left_ypos
         CLC
         ADC     #$0E
         TAY
+
         LDA     #$00
-        JSR     L1A1C
+        JSR     fn_draw_or_blank_object
 
         ; Display the blank screen for 4 * 120ms
         ; Just under half a second  (480ms)
@@ -1874,20 +1891,26 @@ INCLUDE "repton-third-chord-note.asm"
         JSR     L121E
 
         LDY     #$02
-        JSR     L105A
+        JSR     fn_play_music_sound
 
+        ; Spare byte - 1
         NOP
-        JSR     L16E2
 
+        ; Wait 120ms
+        JSR     fn_wait_120ms
+
+        ; Doesn't do anything - Spare bytes - 2
+        ; (Value not used)
         LDA     #$0F
+
         ; Reduce the number of lives the player
         ; has by one
         DEC     var_lives_left
 
         ; If the player has run out of lives
         ; (value is negative) then reset the
-        ; game
-        BMI     L1788
+        ; game, otherwise branch ahead
+        BMI     player_out_of_lives
 
         ; Reset the game
         JMP     fn_reset_and_show_start_screen
@@ -1895,17 +1918,22 @@ INCLUDE "repton-third-chord-note.asm"
 ;1788
 .player_out_of_lives
         ; Player has exhausted all my lives
-        ; Did they achieve a high score?
+        ; Did they achieve a high score? 
+        ; If so update the player high score
+        ; in memory
         JSR     fn_check_and_update_high_score
 
-        JMP     L0FC7
+        ; Get the player name and 
+        ; pdate the high score table to include
+        ; the player name and score
+        JMP     fn_check_if_high_score
 
 ;178E
 .fn_wait_600ms_then_initialise_game
         ; Number of times to wait for 20ms
         ; So wait fro 30 * 20ms = 600ms
         LDX     #$1E
-        
+
 ;1790
 .loop_wait_another_20ms
         ; Wait for 20ms (until a vsync occurs)
@@ -2401,7 +2429,11 @@ INCLUDE "repton-third-chord-note.asm"
 .after_sound_status
         JSR     fn_write_music_status_and_pwd_to_screen
 
-        JSR     L25F9
+        ; Check to see if the Password key P was pressed
+        ; and show the password screen if it was - only 
+        ; if a game has not yet been started.  Also calls
+        ; the routine to check the r, d, w keys
+        JSR     fn_check_p_key
 
         ; Check to see if the player has 
         ; pressed the space bar to start or return
@@ -2411,7 +2443,7 @@ INCLUDE "repton-third-chord-note.asm"
         JSR     fn_read_key
 
         ; If space was pressed go to the end
-        BNE     L195A
+        BNE     process_space
 
         ; Check to see if the escape key was pressed
         ; and 
@@ -2419,8 +2451,9 @@ INCLUDE "repton-third-chord-note.asm"
 
         JMP     write_sound_status_to_screen
 
-.L195A
-        JMP     L2625
+;195A
+.process_space
+        JMP     fn_check_intro_music
 
 ;195D
 .fn_add_to_score 
@@ -2450,7 +2483,21 @@ INCLUDE "repton-third-chord-note.asm"
         CLD
         RTS
 
-.L1977
+;1977
+.fn_remove_repton
+        ; Works out the screen address where repton 
+        ; is currently visible and removes him
+        ;
+        ; The visible screen holds 8x8 objects
+        ;
+        ; This equates to 32x32 tiles as each
+        ; object is 4x4 tiles
+        ;
+        ; Repton's first tile position is (14,14)
+        ; on the 32x32 grid
+        ; and the screen address is calculated for that
+        ; starting position
+
         ; Set the location to the middle of the screen
         ; As it's Repton's position (14,14)
         LDX     #$0E
@@ -2458,22 +2505,31 @@ INCLUDE "repton-third-chord-note.asm"
         JSR     fn_calc_screen_address_from_x_y_pos
 
         ; Store the screen address where Repton should
-        ; be drawn
-        ; TODO resolvename of load vs screen in this fn
+        ; be removed
         STX     zp_tile_load_address_lsb
         STY     zp_tile_load_address_msb
 
-        ; Repton is made of four body parts (see above)
+        ; Repton is made of 4 vertical body parts
+        ;    Head   
+        ;    Torso  
+        ;    Legs
+        ;    Feet
+        ;
+        ; Each body part is 8 bytes high 
+        ; Each body part is 4 bytes wide
+
+        ; Used to iterate through the body parts
+        ; hence 4 
         LDA     #$04
         STA     zp_sprite_parts_to_copy_or_blank
 ;1986
 .loop_blank_next_tile_byte
-        ; Y is used to copy all the horizontal
-        ; columns for the sprite in particular part
+        ; Y is used to blank all the horizontal
+        ; columns for the sprite
         LDY     #$00
 
-        ; X is used to copy all four sprite parts
-        ; Head, torso, legs, feet        
+        ; X is used to blank all 4 bytes wide
+        ; for the current sprite part and tile row
         LDX     #$00
 
 ;198A
@@ -2482,7 +2538,8 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$00
         STA     (zp_tile_load_address_lsb),Y
 
-        ; Each tile is 8 bytes high so blank them all
+        ; Each tile is 8 bytes high so blank each 
+        ; byte of the tile (loop until done)
         INY
         TYA
         AND     #$07
@@ -2528,14 +2585,13 @@ INCLUDE "repton-third-chord-note.asm"
         SEC
         SBC     #$20
         STA     zp_tile_load_address_msb
-.L19B5
+;19B5
 .skip_memory_subtraction_for_blank_2
         DEC     zp_sprite_parts_to_copy_or_blank
         BNE     loop_blank_next_tile_byte
 
         RTS
 
-;...
 ;19BA
 .fn_lookup_repton_sprite_and_display
         ; Get the start address of the current Repton
@@ -2685,181 +2741,513 @@ INCLUDE "repton-third-chord-note.asm"
         RTS        
 
 
-.L1A1A
+;1A1A
+.end_draw_or_blank_object
         PLA
         RTS
 
-.L1A1C
-        ; A= $00, X=$14 Y=$04
-        ; Called just after you die
-        ; 8C / 8D seem to be set to either $00 or $02
-        ; 8C / 8D set to $06 and $F6
-        ; Called with either A=$00 or A=$FF
-        ; Cache A
+;1A1C
+.fn_draw_or_blank_object
+        ; Called when a rock or egg drops or egg cracks
+        ; or monster moves - this took a LONG time to work
+        ; out what it was doing...
+        ; 
+        ; Blanks a whole or partial object or draws 
+        ; a whole or partial a rock or egg or 
+        ; cracked egg or monster on the screen based
+        ; on the tile starting position in X and Y
+        ;
+        ; X and Y are based on 0-255 values but in reality
+        ; a valid map position is only 0-127 and anything
+        ; higher is considered off map so as long as the
+        ; off map default object is immoveable then only
+        ; 0-127 values will be seen
+        ; 
+        ; On entry:
+        ;     A - $00 blank the object at tile 
+        ;             at starting positon held in X Y
+        ;       - $01 draw a monster (routine doesn't care
+        ;             what it draws)
+        ;       - $FF draw rock or egg (routine doesn't care
+        ;             what it draws)
+        ;     X - object's first tile starting x position 
+        ;     Y - object's first tile starting y position 
+        ; $0000 - LSB for the object first tile to draw
+        ; $0001 - MSB for the object first tile to draw
+        ;
+        ; Complexity in the sub-routine is around working out
+        ; partial screen blanks on the edges of the screen as on the
+        ; top/bottom/left/right of the screen only half an object is shown
+        ; and for the monster it jitters so 1/4 or 3/4s may be shown
+        ;
+        ; Routine basically does this
+        ;  1. Make X and Y relative to top corner by subtracting the top left co-ordinates
+        ;  2. Add 4 to X (to avoid dealing with negative numbers for partial objects on the left)
+        ;  3. Add 4 to Y (to avoid dealing with negative numbers for partial objects at the top of the screen)
+        ;  4. Check X < $24 (return otherwise)
+        ;  5. Check Y < $24 (return otherwise)
+        ;  6. Check X != 0  (return otherwise)
+        ;  7. Check Y != 0  (return otherwise)
+        ;  8. (a) Check X < $21 (b) otherwise if $21 =< X < 24 work out how many horizontal parts to show
+        ;  9. (a) Check Y < $21 (b) otherwise if $21 =< Y < 24 work out how many vertial parts to show and adjust start position of sprite tile source
+        ; 10. (a) Check X >= $04 (b) otherwise if X < 4 work out how many horizontal parts to show
+        ; 11. (a) Check Y >= $04 (b) otherwise if Y < 4 work out how many vertial parts to show and adjust start position of sprite tile source
+        ; 12. X = X - 4 (DEC X is performed 4 times)
+        ; 13. Y = Y - 4 (DEC Y is performed 4 times)
+        ; 14. Get screen address at (X, Y)
+        ; 15. (a) Blank or (b) write object to screen address but iterating through tiles
+        ;     for all allow parts shown (either whole or partial object)
+
+        ; Cache the value of A which indicates whether to 
+        ; draw ($FF or $01) an object or blank it ($00)
         PHA
+
+        ; (1) Make X relative to a top left of (0,0)
+        ; by subtracting the top left xpos
         TXA
         SEC
-        ; $14 - $06
-        ; A=$0E
         SBC     zp_visible_screen_top_left_xpos
 
+        ; (2) Left object is off screen so would have a negative
+        ; X at this point so add 4 to make all values positive
+        ; for easier maths
         CLC
         ADC     #$04
-        ; X = $12
         TAX
 
-        ; Y=$04 - $F6 + $04 = $0E
+        ; (1) Make Y relative to a top left of (0,0)
+        ; by subtracting the top left ypos
         TYA
         SEC
         SBC     zp_visible_screen_top_left_ypos
+
+        ; (3) Top object is off screen so would have a negative
+        ; Y at this point so add 4 to make all values positive
+        ; for easier maths
         CLC
         ADC     #$04
         TAY
 
-        ; Check not greater than $24 / 36
+        ; (4) Make sure the tile is still onscreen otherwise
+        ; nothing to draw or blank
+        ; Check X not greater than or equal to $24 / 36
         CPX     #$24
-        BCS     L1A1A
+        BCS     end_draw_or_blank_object
 
-        ; Check not greater than $24 / 36
+        ; (5) Make sure the tile is still onscreen otherwise
+        ; nothing to draw or blank
+        ; Check Y not greater than or equal to $24 / 36
         CPY     #$24
-        BCS     L1A1A
+        BCS     end_draw_or_blank_object
 
-        ; Check not zero
+        ; (6) Make sure the tile is still onscreen otherwise
+        ; nothing to draw or blank
+        ; Check X is not zero 
         CPX     #$00
-        BEQ     L1A1A
+        BEQ     end_draw_or_blank_object
 
-        ; Check not zero
+        ; (7) Make sure the tile is still onscreen otherwise
+        ; nothing to draw or blank
+        ; Check Y is not zero 
         CPY     #$00
-        BEQ     L1A1A
+        BEQ     end_draw_or_blank_object
 
+        ; Default width and height of an object in tiles
+        ; Gets adjusted in a workign copy for objects 
+        ; only partially on screen
         LDA     #$04
-        STA     zp_sprite_parts_to_copy_or_blank
-        STA     L0005
+        STA     zp_object_width_default_counter
+        STA     zp_object_height_default_counter
 
-        Check X < $21 / 33 branch if less than
+        ; (8a) Check X < $21 / 33 branch if less than as
+        ; no partial object calculations need to be done
         CPX     #$21
-        BCC     L1A50
+        BCC     check_y_bottom_edge
 
-        ; If X >= $21 and X < $24
-        STX     zp_tile_load_address_lsb
+        ; (8b) If X >= $21 and X < $24
+        ; 
+        ; Calculate how many tiles need to be copied between
+        ; the position in X and the edge of the screen 
+        ; this is done by subtracting Y from $24 - for rocks
+        ; and eggs this will always be 2 but for jittery
+        ; monsters could be 0-3
+        STX     zp_temp_calc
+
+        ; Subtract X from $24       
         LDA     #$24
         SEC
-        SBC     zp_tile_load_address_lsb
-        STA     zp_sprite_parts_to_copy_or_blank
-.L1A50
+        SBC     zp_target_screen_address_lsb
+        STA     zp_object_width_default_counter
 
-        ; If Y >= $21 and Y < $24
+;1A50
+.check_y_bottom_edge
+
+        ; (9a) If Y < $21 / 33 branch if less than as
+        ; no partial object calculations need to be done
         CPY     #$21
-        BCC     L1A5D
+        BCC     check_x_left_edge
 
-        STY     zp_tile_load_address_msb
+        ; (9b) If Y >= $21 and Y < $24
+        ; 
+        ; Calculate how many tiles need to be copied between
+        ; the position in Y and the edge of the screen 
+        ; this is done by subtracting Y from $24 - for rocks
+        ; and eggs this will always be 2 but for jittery
+        ; monsters could be 0-3
+        STY     zp_temp_y_calc
         LDA     #$24
         SEC
-        SBC     zp_tile_load_address_msb
-        STA     L0005
-.L1A5D
-        ; If X > $04
+        SBC     zp_temp_y_calc
+        STA     zp_object_height_default_counter
+;1A5D
+.check_x_left_edge
+        ; (10a) If X >= $04 branch if greater than or equal as
+        ; no partial object calculations need to be done
         CPX     #$04
-        BCS     L1A79
+        BCS     check_y_top_edge
 
+        ; (10b) X < 4 but by default contains the 
+        ; the number of horizontal tiles to copy
         TXA
-        STA     zp_sprite_parts_to_copy_or_blank
+        STA     zp_object_width_default_counter
+
         EOR     #$03
+
         CLC
         ADC     #$01
         ASL     A
         ASL     A
         ASL     A
+
         CLC
-        ADC     zp_screen_write_address_lsb
-        STA     zp_screen_write_address_lsb
-        LDA     zp_screen_write_address_msb
+        ADC     zp_source_tile_lsb
+        STA     zp_source_tile_lsb
+        LDA     zp_source_tile_msb
         ADC     #$00
-        STA     zp_screen_write_address_msb
+        STA     zp_source_tile_msb
+
+        ; Set X to 4 now so when it's DEC 4 times
+        ; it goes to zero
         LDX     #$04
-.L1A79
-        ; If Y > $04
+;1A79
+.check_y_top_edge
+        ; (11a) If Y >= $04 branch if greater than or equal as
+        ; no partial object calculations need to be done
         CPY     #$04
-        BCS     L1A90
+        BCS     adjust_x_and_y
 
-        STY     L0005
-        LDA     L0E3E,Y
+        ; If a rock is only partially on the screen
+        ; at the top then only need to blank or 
+        ; draw half of it - this routine works out
+        ; how much
+        
+        ; (11b) Y < 4 but by default contains the 
+        ; the number of horizontal tiles to copy
+        STY     zp_object_height_default_counter
+
+        LDA     data_partial_sprite_offset_lookup_lsb,Y
+
+        ; This is to work out which part of
+        ; the rock or egg or monster to start copying from
+        ; For rocks and eggs, this can only be 2 but for
+        ; monsters because they jitter, it could be other
+        ; values
+        ; Y = 0 
+        ; Y = 1 add $3C0 
+        ; Y = 2 add $280
+        ; Y = 3 add $140 
+
+        ; Adjust the source tile memory address to 
+        ; start at the right partial part of the object
+        ; Do the LSB first
         CLC
-        ADC     zp_screen_write_address_lsb
-        STA     zp_screen_write_address_lsb
-        LDA     L0E42,Y
-        ADC     zp_screen_write_address_msb
-        STA     zp_screen_write_address_msb
+        ADC     zp_source_tile_lsb
+        STA     zp_source_tile_lsb
+
+        ; Do the MSB additions
+        LDA     data_partial_sprite_offset_lookup_msb,Y
+        ADC     zp_source_tile_msb
+        STA     zp_source_tile_msb
+
+        ; Set Y to 4 now so when it's DEC'd 4 times it
+        ; goes to zero
         LDY     #$04
-.L1A90
+;1A90
+.adjust_x_and_y
+        ; (12) Subtract 4 from X
         DEX
         DEX
         DEX
         DEX
+
+        ; (13) Subtract 4 from X
         DEY
         DEY
         DEY
         DEY
 
-        ; Blanks a 4x4 tile
+        ; Get the new screen address which needs to be 
+        ; blanked or have the rock or egg or monster
+        ; written to it
         ; X and Y are the (x,y) pos?
         JSR     fn_calc_screen_address_from_x_y_pos
 
-        STX     zp_tile_load_address_lsb
-        STY     zp_tile_load_address_msb
-        PLA
-        BEQ     L1AE9
+        ; Screen write address LSB
+        STX     zp_target_screen_address_lsb
+        ; Screen write address MSB
+        STY     zp_target_screen_address_msb
 
-        LDA     L0005
-        STA     L0007
-.L1AA6
-        LDA     zp_sprite_parts_to_copy_or_blank
-        STA     zp_tile_x_pos_cache
+        ; If A was $00 then blank the object
+        PLA
+        BEQ     fn_blank_screen_object
+
+        ; A was $FF or $01 so draw the object
+
+        ;----------------------------------------------
+        ; 15(a) Draw the rock or egg or monster in the new position
+        ;----------------------------------------------        
+
+        ; Set the number of rows to copy in the working 
+        ; counter (it gets decremented)
+        LDA     zp_object_height_default_counter
+        STA     zp_object_height_working_counter
+;1AA6
+.loop_write_object_next_row
+        ; Reset the number of horizontal tiles to copy in the
+        ; working counter (it gets decremented)
+        LDA     zp_object_width_default_counter
+        STA     zp_object_width_working_counter
         LDY     #$00
-.L1AAC
-        LDA     (zp_screen_write_address_lsb),Y
-        STA     (zp_tile_load_address_lsb),Y
+
+;1AAC
+.loop_write_object_tile
+        ; Add a rock or egg or monster to the 
+        ; new position - copies
+        ; the graphics from the tile memory to
+        ; the screen rather than moving on screen 
+        ; from one position to another (as it's already
+        ; been blanked at this point)
+        LDA     (zp_source_tile_lsb),Y
+        STA     (zp_target_screen_address_lsb),Y
+
+        ; Have all 8 bytes of the current tile
+        ; been copied? If not, loop again
         INY
         TYA
         AND     #$07
-        BNE     L1AAC
+        BNE     loop_write_object_tile
 
+        ; Add 8 to the tile read address as each
+        ; tile is 8 bytes
         CLC
         TYA
-        ADC     zp_tile_load_address_lsb
+        ADC     zp_target_screen_address_lsb
         LDA     #$00
-        ADC     zp_tile_load_address_msb
-        BPL     L1AC7
+        ADC     zp_target_screen_address_msb
 
-        LDA     zp_tile_load_address_msb
+        ; Check to see if the screen start address
+        ; has moved beyond $7FFF - this is 
+        ; done by checking the MSB is still positive
+        ; as when it gets to $80 or greater it's "negative"
+        ; as the eigth bit is set
+        BPL     write_object_tile_check_horizontal
+
+        LDA     zp_target_screen_address_msb
+        ; Wrap the screen start address around by
+        ; subtracting $2000 which is the same
+        ; as subtracting $20 from the MSB
         SEC
         SBC     #$20
-        STA     zp_tile_load_address_msb
-.L1AC7
-        DEC     zp_tile_x_pos_cache
-        BNE     L1AAC
+        STA     zp_target_screen_address_msb
+;1AC7
+.write_object_tile_check_horizontal
+        ; Have all current horiztonal parts of the
+        ; sprite (all on this row) been drawn? There
+        ; are 4 parts to each sprite row
+        DEC     zp_object_width_working_counter
+        BNE     loop_write_object_tile
 
-        LDA     zp_screen_write_address_lsb
+        ; Move to the next row tile of the source object 
+        ; by adding $140 to the address (each next object
+        ; part is $140 higher in memory)
+        LDA     zp_source_tile_lsb
         CLC
         ADC     #$40
-        STA     zp_screen_write_address_lsb
-        LDA     zp_screen_write_address_msb
+        STA     zp_source_tile_lsb
+        LDA     zp_source_tile_msb
         ADC     #$01
-        STA     zp_screen_write_address_msb
-        CLC
-        INC     zp_tile_load_address_msb
-        LDA     zp_tile_load_address_msb
-        BPL     L1AE4
+        STA     zp_source_tile_msb
 
+        ; Increment the target screen address
+        ; (each row on the screen is $FF/256 bytes)
+        ; so easy maths to get to the next row...
+        CLC
+        INC     zp_target_screen_address_msb
+        LDA     zp_target_screen_address_msb
+        BPL     check_if_all_rows_copied
+
+        ; Wrap the screen start address around by
+        ; subtracting $2000 which is the same
+        ; as subtracting $20 from the MSB
         SEC
         SBC     #$20
         STA     zp_tile_load_address_msb
-.L1AE4
-        DEC     L0007
-        BNE     L1AA6
+;1AE4
+.check_if_all_rows_copied
+        ; Move onto the next sprite row
+        DEC     zp_object_height_working_counter
 
-        RTS        
+        ; If still any sprite rows to
+        ; write onto the screen loop back
+        BNE     loop_write_object_next_row
+
+        ; Return
+        RTS      
+
+        ;----------------------------------------------
+        ; 15(b). Blank the rock or egg or monster position 
+        ;---------------------------------------------
+;1AE9
+.fn_blank_screen_object
+        ; Set the number of rows to blank in the working 
+        ; counter (it gets decremented)
+        LDA     zp_object_height_default_counter
+        STA     zp_object_height_working_counter
+;1AED
+.loop_blank_object_next_row
+        ; Reset the number of horizontal tiles to blank in the
+        ; working counter (it gets decremented)
+        LDA     zp_object_height_default_counter
+        STA     zp_object_width_working_counter
+        LDY     #$00
+;1AF3
+.loop_blank_object
+        ; Blank out the rock or egg in the old position 
+        ; Write $00 into the memory locations 
+        LDA     #$00
+        STA     (zp_target_screen_address_lsb),Y
+
+        ; Have all 8 bytes of the current tile
+        ; been blanked? If not, loop again
+        INY
+        TYA
+        AND     #$07
+        BNE     loop_blank_object
+
+        ; Check to see if the Y index
+        ; is making the memory location 
+        ; go beyond $7FFF - - this is done 
+        ; by adding Y and checking the MSB is still positive
+        ; as when it gets to $80 or greater it's "negative"
+        ; as the eigth bit is set. Calculation is not
+        ; stored as above it uses an indirect lookup
+        ; LDA (base address),Y
+        CLC
+        TYA
+        ADC     zp_target_screen_address_lsb
+        LDA     #$00
+        ADC     zp_target_screen_address_msb
+
+        ; If < $80xx the branch ahead
+        BPL     blank_object_tile_check_horizontal
+
+        ; Wrap the screen start address around by
+        ; subtracting $2000 which is the same
+        ; as subtracting $20 from the MSB
+        LDA     zp_target_screen_address_msb
+        SEC
+        SBC     #$20
+        STA     zp_target_screen_address_msb
+
+;1B0E
+.blank_object_tile_check_horizontal
+        ; Have all current horiztonal parts of the
+        ; sprite (all on this row) been blanked? There
+        ; are 4 parts to each sprite row
+        DEC     zp_object_width_working_counter
+        BNE     loop_blank_object
+
+        ; Increment the target screen address
+        ; (each row on the screen is $FF/256 bytes)
+        ; so easy maths to get to the next row...
+        INC     zp_target_screen_address_msb
+
+        ; Check to see if the memory location is
+        ; beyond $7FFF -this is done 
+        ; by checking the MSB is still positive
+        ; as when it gets to $80 or greater it's "negative"
+        ; as the eigth bit is set. If less than, loop
+        LDA     zp_target_screen_address_msb
+        BPL     check_if_all_rows_blanked
+
+        ; Wrap the screen start address around by
+        ; subtracting $2000 which is the same
+        ; as subtracting $20 from the MSB
+        SEC
+        SBC     #$20
+        STA     zp_target_screen_address_msb
+;1B1D
+.check_if_all_rows_blanked
+        ; Move onto the next sprite row
+        DEC     zp_object_width_working_counter
+        BNE     loop_blank_object_next_row
+
+        ; Return
+        RTS          
 ;...
+;1B22
+.fn_update_6845_screen_start_address
+        ; Changes the screen start address in the 6845 
+        ; graphics chip
+        ;
+        ; Get the screen start address lsb/msb and cache
+        LDA     zp_screen_start_address_lsb
+        STA     zp_screen_start_address_lsb_div8
+        LDA     zp_screen_start_address_msb
+        STA     zp_screen_start_address_msb_div8
+
+        ; Screen start address must be divided by 8 
+        ; before setting
+        ; 6845 registers 12 (MSB) and 13 (LSB) require
+        ; the screen start address to be divided
+        ; by 8 so divide by 8
+        ; Accumulator holds the MSB
+        ;  LSR                   ROR $76
+        ; ========               ========
+        ; 76543210 -> (via C) -> 7654321 -> (throw away)
+        LSR     zp_screen_start_address_msb_div8
+        ROR     zp_screen_start_address_lsb_div8
+        LSR     zp_screen_start_address_msb_div8
+        ROR     zp_screen_start_address_lsb_div8
+        LSR     zp_screen_start_address_msb_div8
+        ROR     zp_screen_start_address_lsb_div8
+
+        ; Set 6845 Register to 12
+        ; and give the MSB of the screen start
+        ; address divided by 8
+
+        ; Spare Bytes - 2
+        ; Sub-routine that is called also sets A
+        ; Sub-routing waits for vsync and 
+        ; then sets SHEILA_6845_ADDRESS to #$0C/12
+        LDA     #$0C
+        JSR     fn_wait_for_vsync_and_set_sheila_address_to_12
+
+        ; Give the MSB of the screen start
+        ; address divided by 8
+        LDA     zp_screen_write_address_msb
+        STA     SHEILA_6845_DATA
+
+        ; Set 6845 Register to 13
+        ; and give the LSB of the screen start
+        ; address divided by 8        
+        LDA     #$0D
+        STA     SHEILA_6845_ADDRESS
+        LDA     zp_screen_write_address_lsb
+        STA     SHEILA_6845_DATA
+
+        ; Return
+        RTS
 
 ;1B4B
 .use_default_off_screen_tile
@@ -2880,7 +3268,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; mapped to a map object on the 32 x 32 map
         ;
         ; This is achieved by dividing xpos and ypos by 4
-        ; to move from 128 x 128 co-ordinats to 32x32
+        ; to move from 128 x 128 co-ordinates to 32x32
         ;
         ; This allows the map object to be looked up
         ;
@@ -3108,7 +3496,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; A contains the sprite tile part for the
         ; current (xpos,ypos)
         RTS
-;...
+
 ;1BB4
 .set_default_off_screen_object
         ; Set the string to display to $E0E0 (garbage)
@@ -3267,7 +3655,7 @@ INCLUDE "repton-third-chord-note.asm"
         STX     zp_screen_write_address_lsb
         STY     zp_screen_write_address_msb
 
-        ; Redundant? Spare bytes - 2
+        ; Redundant? Spare bytes - 2?
         PLA
         PHA
 
@@ -3314,7 +3702,7 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;1C3A
 .fn_write_tile_to_screen
-{
+
         ; Preserve A - on entry it contains the 
         ; tile to write to the screen
         PHA
@@ -3371,8 +3759,786 @@ INCLUDE "repton-third-chord-note.asm"
         BPL     loop_get_next_tile_byte
 
         RTS
-}
-;...
+
+;1C6B
+.fn_move_repton_down
+        ; This routine does the following:
+        ; 1. Blanks the current repton sprite
+        ; 2. Updates the screen start address
+        ; 3. Updates the top left (xpos,ypos)
+        ; 4. Adds next repton sprite to the middle of the screen
+        ; 5. Draws new line of tiles at the bottom of the screen
+
+        ; Remove repton from the screen
+        JSR     fn_remove_repton
+
+        ; Move the screen down a row
+        INC     zp_visible_screen_top_left_ypos
+
+        ; Each screen row of bytes is 256 ($FF) bytes long
+        ; so just increase the MSB of the screen start address
+        ; to move to the next row
+        INC     zp_screen_start_address_msb
+
+        ; Check to see if the screen start address
+        ; has moved beyond $7FFF - this is 
+        ; done by checking the MSB is still positive
+        ; as when it gets to $80 or greater it's "negative"
+        ; as the eigth bit is set
+        LDA     zp_screen_start_address_msb
+        BPL     store_new_screen_start_address_for_down
+
+        ; Wrap the screen start address around by
+        ; subtracting $2000 which is the same
+        ; as subtracting $20 from the MSB
+        SEC
+        SBC     #$20
+;1C79
+.store_new_screen_start_address_for_down
+        ; Store the screen start address MSB
+        ; after manipulation (don't need to 
+        ; do this for just the INC but it's done
+        ; anyway)
+        STA     zp_screen_start_address_msb
+
+        ; Perform the hardware scroll
+        JSR     fn_update_6845_screen_start_address
+
+        ; Display the new repton sprite in the
+        ; middle of the screen now the screen has moved
+        JSR     fn_lookup_repton_sprite_and_display
+
+        ; Get the current xpos on the 32x32 grid of the
+        ; top left corner - bottom row will have the 
+        ; same xpos
+        LDA     zp_visible_screen_top_left_xpos
+        STA     zp_new_tile_xpos
+
+        ; Get and add $1F (31) as it's the bottom
+        ; row of the screen which is being updated
+        ; so need to add that offset to the top row
+        ; stored in the ypos
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$1F
+        STA     zp_new_tile_ypos
+
+        ; Need to update the bottom row to contain the
+        ; new tiles - there are 32 of these
+        LDA     #$20
+        STA     zp_sprite_parts_to_copy_or_blank
+;1C90
+.loop_add_new_screen_bottom_tiles
+        ; Lookup the tile that should be shown in this
+        ; position and return it in A
+        LDX     zp_new_tile_xpos
+        LDY     zp_new_tile_ypos
+        JSR     fn_lookup_screen_tile_for_xpos_ypos
+
+        ; Write the tile held in A to the screen
+        ; at the position held in X and Y
+        JSR     fn_display_tile
+
+        ; Move to the next tile in the row
+        INC     zp_new_tile_xpos
+
+        ; If there are any more tiles to copy
+        ; to the bottom row of the screen then loop
+        DEC     zp_sprite_parts_to_copy_or_blank
+        BNE     loop_add_new_screen_bottom_tiles
+
+        ; Return
+        RTS
+
+;1CA1
+.fn_move_repton_up
+        ; This routine does the following:
+        ; 1. Blanks the current repton sprite
+        ; 2. Updates the screen start address
+        ; 3. Updates the top left (xpos,ypos)
+        ; 4. Adds next repton sprite to the middle of the screen
+        ; 5. Draws new line of tiles at the top of the screen
+
+        ; Remove repton from the screen
+        JSR     fn_remove_repton
+
+        ; Move the screen up a row
+        DEC     zp_visible_screen_top_left_ypos
+
+        ; Each screen row of bytes is 256 ($FF) bytes long
+        ; so just decrease the MSB of the screen start address
+        ; by to move to the previous row
+
+        ; Instead of decrementing by the MSB by 1 and checking
+        ; it isn't lower than $60xx and wrapping around by adding
+        ; $20xx, this code adds $1Fxx to the current screen 
+        ; start address and checking to see if it's > $7FFF
+        ; and then subtracting $20xx if it is - which achieves
+        ; the same thing
+        CLC
+        LDA     zp_screen_start_address_msb
+        ADC     #$1F
+        BPL     store_new_screen_start_address_for_up
+
+        ; Wrap the screen start address around by
+        ; subtracting $2000 which is the same
+        ; as subtracting $20 from the MSB
+        SEC
+        SBC     #$20
+;1CB0
+.store_new_screen_start_address_for_up
+        ; Store the screen start address MSB
+        ; after manipulation (don't need to 
+        ; do this for just the DEC but it's done
+        ; anyway)
+        STA     zp_screen_start_address_msb
+
+        ; Perform the hardware scroll
+        JSR     fn_update_6845_screen_start_address
+        ; Display the new repton sprite in the
+        ; middle of the screen now the screen has moved
+        JSR     fn_lookup_repton_sprite_and_display
+
+        ; Get the current xpos on the 32x32 grid of the
+        ; top left corner - bottom row will have the 
+        ; same xpos
+        LDA     zp_visible_screen_top_left_xpos
+        STA     zp_new_tile_xpos
+
+        ; Get the current xpos on the 32x32 grid of the
+        ; top left corner - top row will have the 
+        ; same ypos obviously
+        LDA     zp_visible_screen_top_left_ypos
+        STA     zp_new_tile_ypos
+
+        ; Need to update the top bottom row to contain the
+        ; new tiles - there are 32 of these
+        LDA     #$20
+        STA     zp_sprite_parts_to_copy_or_blank
+
+;1CC4
+.loop_add_new_screen_top_tiles
+        ; Lookup the tile that should be shown in this
+        ; position and return it in A
+        LDX     zp_display_value_msb
+        LDY     zp_display_value_mlsb
+        JSR     fn_lookup_screen_tile_for_xpos_ypos
+
+        ; Write the tile held in A to the screen
+        ; at the position held in X and Y
+        JSR     fn_display_tile
+
+        ; Move to the next tile in the row
+        INC     zp_display_value_msb
+
+        ; If there are any more tiles to copy
+        ; to the top row of the screen then loop        
+        DEC     zp_sprite_parts_to_copy_or_blank
+        BNE     loop_add_new_screen_top_tiles
+
+        ; Return
+        RTS
+
+;1CD5
+.end_move_repton_left
+        RTS
+
+;1CD6
+.fn_move_repton_left
+        ; TODO - not quite true - xpos can be between 0 and 255
+        ; The top left location is based on a 128x128 grid
+        ; So (xpos,ypos) will be between 0 and 127
+        LDA     zp_visible_screen_top_left_xpos
+
+        ; P1 <- Repton
+        ; Check what is in position 1 (P1)
+        ;
+        ; Find the object that is to the left of 
+        ; repton to determine if repton can move left
+
+        ; Add $0D / 13 to the xpos to get the object
+        ; to the left of repton's position
+        ; (Repton is at xpos +$0E so the left object 
+        ; right most tile is xpos +$0D)
+        CLC
+        ADC     #$0D
+
+        ; Divide the xpos by 4 to get the location
+        ; on the 32x32 grid
+        LSR     A
+        LSR     A
+        TAX
+
+        ; Add $0E / 14 to the ypos to get the
+        ; row the row the object is in
+        ; to the left of repton's current position
+        ; (Repton is at ypos +$0E and so is the object
+        ; to the left)
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0E
+
+        ; Divide the xpos by 4 to get the location
+        ; on the 32x32 grid
+        LSR     A
+        LSR     A
+        TAY
+
+
+        ; Lookup the tile to the right of Repton
+        ; (xpos,ypos) are stored in X and Y
+        JSR     fn_lookup_screen_object_for_x_y
+
+
+        ; Is it a solid object? If so branch
+        ; as repton cannot move left
+        CMP     #$18
+        BCC     end_move_repton_left
+
+
+        ; Is it a diamond or empty (A >= $1E)
+        ; if so move repton left
+        CMP     #$1E
+        BCS     move_repton_left
+
+
+        ; Is it a earth, a key or green earth?
+        ; $17 < A < $1C
+        ; if so move repton
+        CMP     #$1C
+        BCC     move_repton_left
+
+        ; If it's a rock (A = $1D) or an egg (A = $1C)
+        ; will end up here
+
+        ; Cache the object id for the object
+        ; to the left of repton (rock or egg)
+        STA     zp_cached_object_id
+
+        LDA     L000A
+        STA     zp_map_object_update_lsb
+
+        LDA     L000B
+        STA     zp_map_object_update_msb
+
+        ; P2 <- P1 <- Repton
+        ;
+        ; Check what is in position 2 (P2)
+        ; to see if the egg or rock can move there
+        ;
+        ; Add $09 / 9 to the xpos to get the
+        ; start of the next object position 
+        ; to the right of repton's current position
+        ; (Repton is at xpos +$0E and is 4 tiles wide
+        ; so the object two to the left is 
+        ; xpos +$09)
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$09
+
+        ; Divide the xpos by 4 to get the location
+        ; on the 32x32 grid
+        LSR     A
+        LSR     A
+        TAX
+        LDA     zp_visible_screen_top_left_ypos
+
+
+        ; Add $0E / 14 to the ypos to get the
+        ; row the row the object is in
+        ; two to the left of repton's current position
+        ; (Repton is at ypos +$0E and so is the object
+        ; two to the left)
+        CLC
+        ADC     #$0E
+
+        ; Divide the ypos by 4 to get the location
+        ; on the 32x32 grid
+        LSR     A
+        LSR     A
+        TAY
+
+        ; Lookup the tile two to the left of Repton (P2)
+        ; (xpos,ypos) are stored in X and Y
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Is it a blank/empty object ($1F)?
+        ; Needs to be empty for Repton to push
+        ; it left - if it isn't branch
+        ; and don't allow Repton to push it
+        CMP     #$1F
+        BNE     end_move_repton_left
+
+        ; Reload the object id for what is to the
+        ; left of Repton
+        LDA     zp_cached_object_id
+
+        ; Update the current map cache to push the
+        ; rock or egg one position left - 
+        ; $000A contains the address of the 
+        ; map location that is to the left of repton
+        LDY     #$00
+        STA     (L000A),Y
+
+        ; Update the current map cache to put an
+        ; empty space ($1F) where the rock or egg
+        ; was (where repton is moving to)
+        LDA     #$1F
+        ; Y is already zero at this point from
+        ; above so Spare Bytes - 2
+        LDY     #$00
+        STA     (L0071),Y
+
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$0A
+        TAX
+
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0E
+        TAY
+
+        LDA     #$00
+
+        JSR     fn_draw_or_blank_object
+
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$06
+        TAX
+
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0E
+        TAY
+
+        ; Set the data tile location to the 
+        ; be the first tile of the rock
+        ; which is the first tile at the start
+        ; of the data tiles
+        LDA     #LO(data_tiles)
+        STA     L0000
+        LDA     #HI(data_tiles)
+        STA     L0001
+
+        ; Is it a rock or an egg that's moving? 
+        ; If a rock then branch ahead        
+        LDA     zp_cached_object_id
+        CMP     #$1D
+        BEQ     left_is_an_egg
+
+        ; Otherwise it's an egg so 
+        ; set the lsb to be the egg's first tile 
+        ;  instead of the rock
+        LDA     #LO(data_tiles_egg)
+        STA     zp_screen_write_address_lsb
+;1D51
+.left_is_an_egg
+        ; Draw the egg or rock on the screen
+        ; Setting to $FF is asking the sub-routine
+        ; to draw the object and reads it from the location
+        ; in $0000/$0001
+        LDA     #$FF
+        JSR     fn_draw_or_blank_object
+
+;1D56
+.move_repton_left
+        ; This does the following:
+        ; 1. Blanks the current repton sprite
+        ; 2. Updates the screen start address
+        ; 3. Updates the top left (xpos,ypos)
+        ; 4. Adds next repton sprite to the middle of the screen
+        ; 5. Draws new line of tiles at the left of the screen
+
+        ; Remove repton from the screen
+        JSR     fn_remove_repton
+
+        ; Move the screen left a column
+        DEC     zp_visible_screen_top_left_xpos
+
+        ; When scrolling right, subtract 8 bytes to the
+        ; screen start address - this is done by:
+        ; 1. adding $F8 to the LSB
+        ; 2. Adding the carry to the MSB (if any)
+        ; 3. Adding $1F to the MSB
+        ; 4. Subtracting $2000 from the address
+        ;
+        ; Seems more intuitive to do the following?
+        ; (and then check if less than $6000 and add $2000)
+        ; CLC
+        ; LDA     $0070
+        ; SBC     #$08
+        ; STA     $0070
+        ;
+        ; LDA     $0071
+        ; SBC     #$00
+        ; STA     $0071
+
+        ; Calculate the new screen start address
+        ; by "subtracting 8"
+        CLC
+        LDA     zp_screen_start_address_lsb
+        ADC     #$F8
+        STA     zp_screen_start_address_lsb
+        LDA     zp_screen_start_address_msb
+        ADC     #$1F
+
+        ; Check to see if the screen start address
+        ; has moved beyond $7FFF - this is 
+        ; done by checking the MSB is still positive
+        ; as when it gets to $80 or greater it's "negative"
+        ; as the eigth bit is set        
+        BPL     store_new_screen_start_address_for_left
+
+        ; Wrap the screen start address around by
+        ; subtracting $2000 which is the same
+        ; as subtracting $20 from the MSB
+        SEC
+        SBC     #$20
+;1D6B
+.store_new_screen_start_address_for_left
+        ; Store the screen start address MSB
+        ; after manipulation (don't need to 
+        ; do this for just the DEC but it's done
+        ; anyway)
+        STA     zp_screen_start_address_msb
+
+        ; Perform the hardware scroll
+        JSR     fn_update_6845_screen_start_address
+
+        ; Display the new repton sprite in the
+        ; middle of the screen now the screen has moved
+        JSR     fn_lookup_repton_sprite_and_display
+
+        ; Get the top left hand xpos as this is the xpos
+        ; where the new tiles need to be drawn
+        LDA     zp_visible_screen_top_left_xpos
+        STA     zp_new_tile_xpos
+
+        ; Get the top left hand ypos as this is the ypos
+        ; where the new tiles need to be drawn
+        LDA     zp_visible_screen_top_left_ypos
+        STA     zp_new_tile_ypos
+
+        ; Need to update the left hand column contain the
+        ; new tiles - there are 32 of these
+        LDA     #$20
+        STA     zp_sprite_parts_to_copy_or_blank
+;1D7F
+.loop_add_new_screen_left_tiles
+        ; Lookup the tile that should be shown in this
+        ; position and return it in A
+        LDX     zp_new_tile_xpos
+        LDY     zp_new_tile_ypos
+        JSR     fn_lookup_screen_tile_for_xpos_ypos
+
+        ; Write the tile held in A to the screen
+        ; at the position held in X and Y
+        JSR     fn_display_tile
+
+        ; Move to the next row's tile on the left hand side
+        INC     zp_new_tile_ypos
+
+        ; If there are any more tiles to copy
+        ; to the bottom row of the screen then loop
+        DEC     zp_sprite_parts_to_copy_or_blank
+        BNE     loop_add_new_screen_left_tiles
+
+        ; Return
+        RTS
+
+;1D90
+.end_move_repton_right
+        ; Return
+        RTS
+
+;1D91
+.fn_move_repton_right
+        ; The top left location is based on a 128x128 grid
+        ; So (xpos,ypos) will be between 0 and 127
+        LDA     zp_visible_screen_top_left_xpos
+
+        ; Repton -> P1
+        ; Check what is in position 1 (P1)
+        ;
+        ; Find the object that is to the right of 
+        ; repton to determine if repton can move right
+
+        ; Add $12 / 18 to the xpos to get the
+        ; start of the next object position 
+        ; to the right of repton's current position
+        ; (Repton is at xpos +$0E and is 4 tiles wide
+        ; so the next object is xpos +$0E +$04)
+        CLC
+        ADC     #$12
+
+        ; Divide the xpos by 4 to get the location
+        ; on the 32x32 grid
+        LSR     A
+        LSR     A
+        TAX
+
+        ; Add $0E / 14 to the ypos to get the
+        ; row the row the next object is in
+        ; to the right of repton's current position
+        ; (Repton is at ypos +$0E and so is the object
+        ; to the right)
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0E
+
+        ; Divide the ypos by 4 to get the location
+        ; on the 32x32 grid
+        LSR     A
+        LSR     A
+        TAY
+
+        ; Lookup the tile to the right of Repton
+        ; (xpos,ypos) are stored in X and Y
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Is it a solid object? If so branch
+        ; as repton cannot move right
+        CMP     #$18
+        BCC     end_move_repton_right
+
+        ; Is it a diamond or empty (A >= $1E)
+        ; if so move repton
+        CMP     #$1E
+        BCS     move_repton_right
+
+        ; Is it a earth, a key or green earth?
+        ; $17 < A < $1C
+        ; if so move repton
+        CMP     #$1C
+        BCC     move_repton_right
+
+        ; If it's a rock (A = $1D) or an egg (A = $1C)
+        ; will end up here
+
+        ; Cache the object id for the object
+        ; to the right of repton (rock or egg)
+        STA     zp_cached_object_id
+
+        ; Check to see if the rock or egg can be pushed
+        ; right - can only happen if there is 
+        ; empy space to the right of the rock or egg
+
+        LDA     L000A
+        STA     L0071
+
+        LDA     L000B
+        STA     L0072
+        
+        ; Repton -> P1 -> P2
+        ;
+        ; Check what is in position 2 (P2)
+        ; to see if the egg or rock can move there
+        ;
+        ; Add $16 / 22 to the xpos to get the
+        ; start of the next object position 
+        ; to the right of repton's current position
+        ; (Repton is at xpos +$0E and is 4 tiles wide
+        ; so the object two to the right is 
+        ; xpos +$0E +$04 +$04)
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$16
+
+        ; Divide the xpos by 4 to get the location
+        ; on the 32x32 grid
+        LSR     A
+        LSR     A
+        TAX
+
+        ; Add $0E / 14 to the ypos to get the
+        ; row the row the object is in
+        ; two to the right of repton's current position
+        ; (Repton is at ypos +$0E and so is the object
+        ; two to the right)
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0E
+
+        ; Divide the ypos by 4 to get the location
+        ; on the 32x32 grid
+        LSR     A
+        LSR     A
+        TAY
+
+        ; Lookup the tile two to the right of Repton (P2)
+        ; (xpos,ypos) are stored in X and Y
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Is it a blank/empty object ($1F)?
+        ; Needs to be empty for Repton to push
+        ; it right - if it isn't branch
+        ; and don't allow Repton to push it
+        CMP     #$1F
+        BNE     end_move_repton_right
+
+        ; Reload the object id for what is to the
+        ; right of Repton
+        LDA     zp_cached_object_id
+
+        ; Update the current map cache to push the
+        ; rock or egg one position right
+        LDY     #$00
+        STA     (L000A),Y
+
+        ; Update the current map cache to put an
+        ; empty space where the rock or egg
+        ; was (where repton is moving to)
+        LDA     #$1F
+        STA     (L0071),Y
+
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$12
+        TAX
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0E
+        TAY
+
+        ; Remove the egg or rock
+        LDA     #$00
+        JSR     fn_draw_or_blank_object
+
+        LDA     zp_visible_screen_top_left_xpos
+.L1DEE
+        CLC
+        ADC     #$16
+        TAX
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0E
+        TAY
+
+        ; Set the data tile location to the 
+        ; be the first tile of the rock
+        ; which is the first tile at the start
+        ; of the data tiles
+        LDA     #LO(data_tiles)
+        STA     L0000
+        LDA     #HI(data_tiles)
+        STA     L0001
+
+        ; Is it a rock or an egg that's moving? 
+        ; If a rock then branch ahead
+        LDA     zp_cached_object_id
+        CMP     #$1D
+        BEQ     right_is_an_egg
+
+        ; Otherwise it's an egg so 
+        ; set the lsb to be the egg's first tile 
+        ;  instead of the rock
+        LDA     #LO(data_tiles_egg)
+        STA     L0070
+
+;1E0A
+.right_is_an_egg
+        ; Draw the egg
+        LDA     #$FF
+        JSR     fn_draw_or_blank_object
+
+;1E0F
+.move_repton_right
+        ; This does the following:
+        ; 1. Blanks the current repton sprite
+        ; 2. Updates the screen start address
+        ; 3. Updates the top left (xpos,ypos)
+        ; 4. Adds next repton sprite to the middle of the screen
+        ; 5. Draws new line of tiles at the right of the screen
+
+        ; Remove repton from the screen
+        JSR     fn_remove_repton
+
+        ; Move the screen right a column
+        INC     zp_visible_screen_top_left_xpos
+
+        ; When scrolling right, add 8 bytes to the
+        ; screen start address
+        CLC
+        LDA     zp_screen_start_address_lsb
+        ADC     #$08
+        STA     zp_screen_start_address_lsb
+
+        ; If there was any carry from the LSB
+        ; add it to the MSB
+        LDA     zp_screen_start_address_msb
+        ADC     #$00
+
+        ; Check to see if the screen start address
+        ; has moved beyond $7FFF - this is 
+        ; done by checking the MSB is still positive
+        ; as when it gets to $80 or greater it's "negative"
+        ; as the eigth bit is set
+        BPL     store_new_screen_start_address_for_down
+
+        ; Wrap the screen start address around by
+        ; subtracting $2000 which is the same
+        ; as subtracting $20 from the MSB
+        SEC
+        SBC     #$20
+;1E24
+.store_new_screen_start_address_for_down
+        ; Store the screen start address MSB
+        ; after manipulation (don't need to 
+        ; do this for just the INC but it's done
+        ; anyway)
+        STA     zp_screen_start_address_msb
+
+        ; Perform the hardware scroll
+        JSR     fn_update_6845_screen_start_address
+
+        ; Display the new repton sprite in the
+        ; middle of the screen now the screen has moved
+        JSR     fn_lookup_repton_sprite_and_display
+
+        ; Get and add $1F (31) to the top left xpos
+        ; as it's the right hand side of the screen 
+        ; which is being updated so need to add that 
+        ; offset
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$1F
+        STA     zp_new_tile_xpos
+
+        ; Get the current ypos on the 32x32 grid of the
+        ; top left corner -right hand column will have the
+        ; same start ypos
+        LDA     zp_visible_screen_top_left_ypos
+        STA     zp_new_tile_ypos
+
+        ; Need to update the right hand column contain the
+        ; new tiles - there are 32 of these
+        LDA     #$20
+        STA     zp_sprite_parts_to_copy_or_blank
+
+;1E3B
+.loop_add_new_screen_right_tiles
+        ; Lookup the tile that should be shown in this
+        ; position and return it in A
+        LDX     zp_new_tile_xpos
+        LDY     zp_new_tile_ypos
+        JSR     fn_lookup_screen_tile_for_xpos_ypos
+
+        ; Write the tile held in A to the screen
+        ; at the position held in X and Y
+        JSR     fn_display_tile
+
+        ; Move to the next row's tile on the right hand side
+        INC     zp_new_tile_ypos
+
+        ; If there are any more tiles to copy
+        ; to the bottom row of the screen then loop
+        DEC     zp_sprite_parts_to_copy_or_blank
+        BNE     loop_add_new_screen_right_tiles
+
+        ; Return
+        RTS
 
 ;1E4C
 .fn_get_nth_bit_from_memory
@@ -3634,7 +4800,6 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;1EAE
 .fn_get_next_map_object_bit
-        ;0072
         ; The values in the follow locations
         ; contain the YXth bit that needs to be
         ; retrieved
@@ -3820,7 +4985,7 @@ INCLUDE "repton-third-chord-note.asm"
         CMP     #$18
         BCC     check_down_key
 
-        ; Is it an Egg? If so branch
+        ; Is it an egg? If so branch
         CMP     #$1C
         BEQ     check_down_key
 
@@ -4105,7 +5270,6 @@ INCLUDE "repton-third-chord-note.asm"
         ; this return to return to status
         ; screen (lives, diamonds left etc)
 
-
         ; Set repton's animation state to 'Repton Standing'
         LDA     #$0A
         STA     var_repton_animation_state
@@ -4136,7 +5300,6 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$60
         STA     zp_screen_start_address_msb 
 
-        
         ; Top four bits are the logical colour to assign
         ; Bottom four bits are the physical colour to set
         ; $11 = 0001 0001
@@ -4243,6 +5406,12 @@ INCLUDE "repton-third-chord-note.asm"
 ;206E
 .main_game_loop
 
+        ; TODO
+        ; This map be checking to see if repton 
+        ; is moving at the moment up or down or
+        ; during an animation frame - difficult to 
+        ; tell from reading the code
+
         ; Check to see if the x position is in 
         ; at the start of a 32x32 grid position
         ; (remember ypos is 0 to 127) so mask
@@ -4306,14 +5475,19 @@ INCLUDE "repton-third-chord-note.asm"
         ; If so branch ahead
         BPL     move_repton_up
 
-        ; Move repton down
-        JSR     L1C6B
+        ; Move repton down (remove repton, move
+        ; the screen down, add repton, add new line
+        ; of tiles at the bottom of the screen)
+        JSR     fn_move_repton_down
 
         JMP     check_horizontal_movement
 
 ;2094
 .move_repton_up
-        JSR     L1CA1
+        ; Move repton up (remove repton, move
+        ; the screen up, add repton, add new line
+        ; of tiles at the top of the screen)
+        JSR     fn_move_repton_up
 
 ;2097
 .check_horizontal_movement
@@ -4327,14 +5501,14 @@ INCLUDE "repton-third-chord-note.asm"
         BPL     move_repton_right
 
         ; Move repton left
-        JSR     L1CD6
+        JSR     fn_move_repton_left
 
         JMP     L20A7
 
 ;20A4
 .move_repton_right
         ; Move repton right
-        JSR     L1D91
+        JSR     fn_move_repton_right
 
 .L20A7
         ; Allow maskable interrupts
@@ -4832,7 +6006,22 @@ INCLUDE "repton-third-chord-note.asm"
         ; Re-enable maskable interrupts
         CLI
         RTS
-;...
+
+;221C
+
+        JSR     fn_draw_or_blank_object
+        LDY     #$41
+        LDA     ($72),Y
+        CMP     #$FF
+        BNE     $2230
+        LDA     $71
+        CMP     #$1E
+        BCS     $2230
+
+        ; Kill repton (lose a life)
+        JMP     fn_kill_repton
+;2230
+        RTS
 
 
 ;2231
@@ -4844,7 +6033,17 @@ INCLUDE "repton-third-chord-note.asm"
         ; string so that when the main routine writes it'll 
         ; choose this string for that line
         JMP     fn_set_press_escape_lsb
-;...
+; 2237
+        ; Spare bytes - 9
+        NOP
+        NOP
+        NOP
+        NOP
+        NOP 
+        NOP
+        NOP
+        NOP
+        NOP
 ;2240
 INCLUDE "repton-music-intro-notes.asm"
 ;2300
@@ -5237,7 +6436,7 @@ INCLUDE "repton-music-intro-notes.asm"
         EQUS    $81,"Well done.  Now do that from thevery start of screen one.",$0D
 .text_screen_complete_amazing        
         EQUS    $81,"Amazing!  Now try again.",$0D
-;...
+
 ;24B3
 .fn_reset_music_and_draw_repton
         ; Reset the music tune to start at the beginning
@@ -5295,7 +6494,10 @@ INCLUDE "repton-music-intro-notes.asm"
         LDX     #$03
         LDY     #$16
         RTS
-;...
+;24F9
+        ; Spare bytes - 6
+        EQUB    $00,$00,$00,$00,$00,$00,$00
+
 ;2500
 .fn_reset_palette_to_default_game_colours
         ; OSWRCH &14
@@ -5333,7 +6535,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Logical 2 = Physical 3 (Yellow)
         ; Logical 3 = Physical 6 (Green)
         JMP     fn_define_logical_colour
-;...
+
 ;2518
 .fn_default_palette_with_cyan
         ; Reset to default game colours
@@ -5381,7 +6583,6 @@ INCLUDE "repton-music-intro-notes.asm"
         LDA     #$00
         JMP     $fn_wait_600ms_then_initialise_game     
 
-;...
 .253F
         ; Password matched so set the text
         ; to be the matched screen text (well
@@ -5394,7 +6595,7 @@ INCLUDE "repton-music-intro-notes.asm"
 ;2544
 .text_passwd_not_recognised
         EQUS    "Password not recognised",$0D
-;...
+
 ;255c
 .fn_reset_start_and_started_on_screen
         ; If the screen number is already positive
@@ -5538,6 +6739,15 @@ INCLUDE "repton-music-intro-notes.asm"
 
         RTS
 
+;25C7
+.fn_wait_for_vsync_and_set_sheila_address_to_12
+        ; Wait for vertical sync
+        JSR     fn_wait_for_vertical_sync
+
+        ; Set SHEILA_6845_ADDRESS to #$0C/12
+        LDA     #$0C
+        STA     SHEILA_6845_ADDRESS
+        RTS        
 
 ;25D0
 .fn_display_p_or_r_option
@@ -5582,6 +6792,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Display the spring and set the LSB for the
         ; next string to write to be the Press escape to kill yourself
         JMP     fn_write_string_and_set_escape_lsb
+
 ;25F4
 .game_started
         JMP     fn_write_r_to_restart
@@ -5590,7 +6801,8 @@ INCLUDE "repton-music-intro-notes.asm"
         NOP
         NOP
 
-.L25F9
+;L25F9
+.fn_check_p_key
         ; Check to see if the player has 
         ; asked for the music to be switched 
         ; on or off or pressed restart
@@ -5601,7 +6813,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; a password when in a game
         LDA     var_lives_left
         CMP     #$03
-        BNE     L262B
+        BNE     end_check_p_key
 
         ; Check to see if score is positive
         ; or if there is any remaining time
@@ -5611,13 +6823,14 @@ INCLUDE "repton-music-intro-notes.asm"
         ORA     var_score_mlsb
         ORA     var_score_msb
         ORA     var_remaining_time_lsb
-        BNE     L262B
+        BNE     end_check_p_key
 
         ; Wait for a key press of P
         LDA     #$C8
         JSR     fn_read_key
 
-        BEQ     L262B
+        ; If it was't pressed branch away
+        BEQ     end_check_p_key
 
         ; Set current screen and started on screen to
         ; unknown
@@ -5630,11 +6843,14 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Reset the game to a new game
         JSR     fn_reset_game
 
-        ; No idea what's on the stack at this point
+        ; TODO No idea what's on the stack at this point
         ; but it's cleared and thrown away
         PLA
         PLA
-.L2625
+
+        ; Continues below
+;2625
+fn_check_intro_music
         ; If player has all lives and score is zero
         ; then play the intro music as it's the
         ; start of a game
@@ -5643,10 +6859,31 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Dissolve the screen 
         JMP     fn_dissolve_screen
 
-.L262B
-.end_something
+;262B
+.end_check_p_key
         RTS
-;...
+
+;262C
+        ; TODO
+        LDA     $71
+        LSR     A
+        LSR     A
+        ADC     #$F1
+        JMP     fn_play_music_sound
+
+; 2635
+        ; Spare bytes - 11
+        RTS
+        RTS
+        RTS
+        RTS
+        RTS
+        RTS
+        RTS
+        RTS
+        NOP
+        NOP
+        NOP
 
 ; 2640
 .fn_game_start
@@ -5777,8 +7014,22 @@ INCLUDE "repton-music-intro-notes.asm"
 
         ; Reinitialise and restart the game
         JMP     fn_initialise_game_after_restart
-;...
-;2800
+
+;26B4
+        ; Spare bytes - 76
+        EQUB    $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        EQUB    $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        EQUB    $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        EQUB    $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        EQUB    $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        EQUB    $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        EQUB    $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        EQUB    $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        EQUB    $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        EQUB    $FF,$FF,$FF,$FF
+;2700
+INCLUDE "repton-has-been-finished.asm"
+;29FF
 
 ;2A00
 .fn_replace_lowest_high_score_with_current
@@ -5893,12 +7144,12 @@ INCLUDE "repton-music-intro-notes.asm"
         LDY     #$00
 ;2A64
 .loop_repton_finished_logo
-        LDA     L2700,Y
-        STA     L6500,Y
-        LDA     L2800,Y
-        STA     L6600,Y
-        LDA     L2900,Y
-        STA     L6700,Y
+        LDA     data_repton_has_been_finished_page_1,Y
+        STA     $6500,Y
+        LDA     data_repton_has_been_finished_page_2,Y
+        STA     $6600,Y
+        LDA     data_repton_has_been_finished_page_3,Y
+        STA     $6700,Y
         INY
         ; If not all 255 bytes copied in each page 
         ; loop again
@@ -6049,7 +7300,8 @@ INCLUDE "repton-music-intro-notes.asm"
         CMP     zp_masked_password_character
         RTS        
 
-;2AFF - Spare byte?
+;2AFF 
+        ; Spare byte - 1
         EQUB    $00        
 
 ;2B00
@@ -6083,8 +7335,7 @@ INCLUDE "repton-music-intro-notes.asm"
         EQUB    $00,$03,$06,$09,$0C,$0F,$12,$15
 
 ;2BE3
-        ; Spare Bytes? Maybe 9 or 10 high score   places 
-        ; originally
+        ; Spare Bytes - 29
         EQUB    $0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D
         EQUB    $0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D
         EQUB    $0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D
@@ -6270,7 +7521,7 @@ INCLUDE "repton-music-intro-notes.asm"
         RTS        
 
 ;2C98
-        ; Spare bytes
+        ; Spare bytes 3
         EQUB    $00, $00, $20
 
 ;2C9B
@@ -6290,7 +7541,9 @@ INCLUDE "repton-music-intro-notes.asm"
         EQUS    "Congratulations. ",$83,"Enter your name",$0D
 ;2d22
 .text_last_score
-        EQUS    "Last Score : ",$0D,
+        EQUS    "Last Score : ",$0D
+
+        ; Spare bytes - 16
         EQUB    $00,$00,$00,$00,$00,$00,$00,$00
         EQUB    $00,$00,$00,$00,$00,$00,$00,$00
 ;2D40
@@ -6591,7 +7844,6 @@ INCLUDE "repton-music-intro-notes.asm"
 
         ; Write the string and return
         JMP     fn_write_string_to_screen
-
 
 ;2E94
 .text_music

@@ -5,6 +5,9 @@
 ;
 ;    address = (tile number * 8) + $2FC0
 ;
+; Each horizontal part of an object is $140 higher in memory 
+; (for rock, egg, key and repton/monster/explosions )
+; 
 .data_tiles
 ; $00   Rock (0,0) top left rounded corner with yellow edge
         EQUB    $00,$00,$10,$21,$21,$53,$43,$41
@@ -15,6 +18,7 @@
 ; $03   Rock (0,3) top right rounded corner with yellow edge        
         EQUB    $00,$00,$80,$40,$48,$28,$20,$6C
 ; ---------------------------
+.data_tiles_egg
 ; $04   Egg  (0,0) top left 
         EQUB    $00,$00,$00,$00,$10,$10,$10,$30
 ; $05   Egg  (0,1) top middle left curving         
@@ -31,8 +35,8 @@
 ; $0A   Key  (0,2) top middle right curving        
         EQUB    $C0,$F0,$38,$0A,$0A,$0A,$0A,$0F
 ; $0B   Key  (0,3) top right       
-; ---------------------------
         EQUB    $00,$00,$80,$80,$C0,$48,$68,$28
+; ---------------------------
 ; $0C   Solid rectangle no coloured edges        
         EQUB    $0F,$0F,$0F,$0F,$0F,$0F,$0F,$0F
 ; $0D   Solid rectangle with yellow left edge      
@@ -641,7 +645,6 @@
         EQUB    $03,$01,$01,$01,$01,$01,$01,$01
         EQUB    $08,$08,$08,$08,$08,$0E,$0F,$0F
 
-
 ; $3A20 - Repton Moving right, right hand slightly forward - feet  
         EQUB    $00,$00,$01,$01,$00,$00,$00,$00
         EQUB    $07,$0F,$0E,$0C,$0E,$0F,$07,$00
@@ -686,247 +689,251 @@
 
 ; $3B00 - Repton Standing - head
 .sprite_repton_standing
+        EQUB    $00,$00,$00,$00,$00,$00,$00,$00
         EQUB    $77,$DD,$A8,$A8,$DD,$76,$33,$10
         EQUB    $EE,$BB,$51,$51,$BB,$E6,$CC,$80
-        EQUB    $00,$00,$00,$00,$00,$00,$00,$00
         EQUB    $00,$00,$00,$00,$00,$00,$00,$00
 
 ; $3B20 - Repton Standing looking right - head
 .sprite_repton_standing_looking_r
+        EQUB    $00,$00,$00,$00,$00,$00,$00,$00
         EQUB    $00,$11,$33,$33,$33,$11,$00,$00
         EQUB    $FF,$CC,$DC,$DC,$EE,$FF,$FF,$C0
         EQUB    $88,$CC,$44,$44,$44,$CC,$88,$00
-        EQUB    $11,$33,$22,$22,$22,$33,$11,$00
 
 ; $3B40 - Repton Standing looking left - head
 .sprite_repton_standing_looking_l
+        EQUB    $11,$33,$22,$22,$22,$33,$11,$00
         EQUB    $FF,$33,$B3,$B3,$77,$FF,$FF,$30
         EQUB    $00,$88,$CC,$CC,$CC,$88,$00,$00
         EQUB    $00,$00,$00,$00,$00,$00,$00,$00
-        EQUB    $00,$00,$00,$80,$88,$88,$CC,$CC
 
 ; $3B60 - Monster left hand up - head
 .sprite_monster_left_hand_up
+        EQUB    $00,$00,$00,$80,$88,$88,$CC,$CC
         EQUB    $77,$FC,$EC,$EC,$FF,$FD,$FE,$77
         EQUB    $FF,$F9,$D9,$D9,$F7,$FD,$F3,$FF
         EQUB    $00,$88,$88,$88,$88,$88,$88,$00
-        EQUB    $00,$11,$11,$11,$11,$11,$11,$00
 
 ; $3B80 - Monster right hand up - head
 .sprite_monster_right_hand_up
+        EQUB    $00,$11,$11,$11,$11,$11,$11,$00
         EQUB    $FF,$F9,$B9,$B9,$FE,$FB,$FC,$FF
         EQUB    $EE,$F3,$73,$73,$FF,$FB,$F7,$EE
         EQUB    $00,$00,$00,$10,$11,$11,$33,$33
-        EQUB    $00,$00,$00,$11,$22,$66,$00,$54
 
 ; $3BA0 - Big explosion - top
 .sprite_explosion_big
+        EQUB    $00,$00,$00,$11,$22,$66,$00,$54
         EQUB    $22,$AA,$01,$8A,$41,$1C,$83,$14
         EQUB    $88,$8D,$66,$44,$54,$46,$40,$22
         EQUB    $00,$00,$88,$04,$00,$AA,$11,$88
-        EQUB    $00,$00,$00,$00,$00,$11,$00,$11
+
 
 ; $3BC0 - Medium explosion - top
 .sprite_explosion_medium
+        EQUB    $00,$00,$00,$00,$00,$11,$00,$11
         EQUB    $00,$00,$11,$02,$CD,$33,$8B,$14
         EQUB    $00,$00,$66,$44,$55,$66,$44,$22
         EQUB    $00,$00,$00,$00,$00,$88,$00,$CC
-        EQUB    $00,$00,$00,$00,$00,$00,$00,$11
 
 ; $3BE0 - Small explosion - top
 .sprite_explosion_small
+        EQUB    $00,$00,$00,$00,$00,$00,$00,$11
         EQUB    $00,$00,$00,$00,$01,$77,$8B,$15
         EQUB    $00,$00,$00,$00,$44,$66,$44,$22
         EQUB    $00,$00,$00,$00,$00,$00,$00,$88
-        EQUB    $00,$00,$00,$00,$10,$10,$10,$30
 
 ; $3C00 - Cracked Egg - top
+        EQUB    $00,$00,$00,$00,$10,$10,$10,$30
         EQUB    $10,$50,$E0,$70,$B0,$D0,$E0,$D0
         EQUB    $80,$E0,$F0,$70,$B0,$50,$E0,$D0
         EQUB    $00,$00,$00,$00,$80,$00,$80,$C0
-        EQUB    $00,$11,$11,$11,$11,$11,$11,$00
 
 ; 3C20 - Monster standing - head
+        EQUB    $00,$11,$11,$11,$11,$11,$11,$00
         EQUB    $FF,$F9,$D9,$D9,$FE,$FB,$FC,$FF
         EQUB    $EE,$F3,$73,$73,$FF,$FB,$F7,$EE
         EQUB    $00,$00,$00,$00,$00,$00,$00,$00
-        EQUB    $00,$10,$10,$30,$30,$30,$70,$60
 
 ; $3C40 - Repton Standing - torso
+        EQUB    $00,$10,$10,$30,$30,$30,$70,$60
         EQUB    $70,$F0,$F0,$F0,$70,$70,$30,$30
         EQUB    $E0,$F0,$F0,$F0,$E0,$E0,$C0,$C0
         EQUB    $00,$80,$80,$C0,$C0,$C0,$E0,$60
-        EQUB    $00,$00,$00,$10,$10,$10,$30,$30
 
 ; $3C60 - Repton Standing looking right - torso
+        EQUB    $00,$00,$00,$10,$10,$10,$30,$30
         EQUB    $30,$F0,$F0,$F0,$B0,$B0,$90,$10
         EQUB    $F0,$F0,$F0,$F0,$F0,$F0,$E0,$E0
         EQUB    $00,$C0,$C0,$E0,$60,$60,$70,$30
-        EQUB    $00,$30,$30,$70,$60,$60,$E0,$C0
 
 ; $3C80 - Repton Standing looking left - torso
+        EQUB    $00,$30,$30,$70,$60,$60,$E0,$C0
         EQUB    $F0,$F0,$F0,$F0,$F0,$F0,$70,$70
         EQUB    $C0,$F0,$F0,$F0,$D0,$D0,$90,$80
         EQUB    $00,$00,$00,$80,$80,$80,$C0,$C0
-        EQUB    $66,$66,$33,$33,$33,$11,$11,$11
 
 ; $3CA0 - Monster left hand up - torso
+        EQUB    $66,$66,$33,$33,$33,$11,$11,$11
         EQUB    $33,$FF,$FE,$FC,$F8,$F8,$F8,$F8
         EQUB    $EE,$EE,$FF,$F7,$F7,$FF,$EE,$EE
         EQUB    $00,$00,$00,$10,$99,$BB,$BB,$EE
-        EQUB    $00,$00,$00,$80,$99,$DD,$DD,$77
 
 ; $3CC0 - Monster right hand up - torso
+        EQUB    $00,$00,$00,$80,$99,$DD,$DD,$77
         EQUB    $77,$77,$FF,$FE,$FE,$FF,$77,$77
         EQUB    $CC,$FF,$F7,$F3,$F1,$F1,$F1,$F1
         EQUB    $66,$66,$CC,$CC,$CC,$88,$88,$88
-        EQUB    $46,$03,$01,$88,$05,$88,$14,$E9
 
 ; $3CE0 - Big explosion - top middle
+        EQUB    $46,$03,$01,$88,$05,$88,$14,$E9
         EQUB    $4B,$1A,$24,$5A,$A5,$0B,$5A,$27
         EQUB    $10,$85,$40,$24,$94,$0E,$B4,$5A
         EQUB    $AA,$D1,$22,$A2,$00,$00,$51,$2A
-        EQUB    $02,$01,$01,$00,$05,$00,$15,$65
+
 
 ; $3D00 - Medium explosion - top middle
+        EQUB    $02,$01,$01,$00,$05,$00,$15,$65
         EQUB    $CB,$1A,$37,$9E,$E4,$8B,$1E,$AF
         EQUB    $11,$85,$EA,$2E,$B6,$0E,$3A,$5A
         EQUB    $88,$CC,$22,$A2,$44,$00,$44,$2A
-        EQUB    $00,$01,$01,$00,$23,$22,$11,$23
 
 ; $3D20 - Small explosion - top middle
+        EQUB    $00,$01,$01,$00,$23,$22,$11,$23
         EQUB    $CF,$1A,$37,$9E,$E4,$8B,$1E,$EB
         EQUB    $11,$85,$EA,$2E,$A7,$4A,$3B,$4B
         EQUB    $88,$CC,$00,$88,$44,$00,$44,$08
-        EQUB    $30,$30,$70,$70,$20,$50,$60,$F0
 
 ; $3D40 - Cracked Egg - top middle
+        EQUB    $30,$30,$70,$70,$20,$50,$60,$F0
         EQUB    $B0,$D0,$B0,$70,$F0,$F0,$F0,$70
         EQUB    $B0,$D0,$E0,$D0,$B0,$D0,$B0,$70
         EQUB    $C0,$C0,$E0,$E0,$E0,$E0,$E0,$D0
-        EQUB    $00,$00,$11,$91,$BB,$BB,$EE,$EE
 
 ; 3D60 - Monster standing - torso
+        EQUB    $00,$00,$11,$91,$BB,$BB,$EE,$EE
         EQUB    $77,$FF,$FC,$F8,$F8,$F8,$F8,$F8
         EQUB    $CC,$EE,$F7,$F3,$F3,$F3,$E2,$E2
         EQUB    $00,$00,$00,$20,$AA,$AA,$AA,$EE
-        EQUB    $42,$06,$04,$00,$00,$00,$00,$00
 
 ; $3D80 - Repton Standing - legs
+        EQUB    $42,$06,$04,$00,$00,$00,$00,$00
         EQUB    $12,$03,$07,$07,$07,$0E,$0E,$0C
         EQUB    $84,$0C,$0E,$0E,$0E,$07,$07,$03
         EQUB    $24,$06,$02,$00,$00,$00,$00,$00
-        EQUB    $21,$03,$02,$00,$00,$00,$00,$00
 
 ; $3DA0 - Repton Standing looking right - legs
+        EQUB    $21,$03,$02,$00,$00,$00,$00,$00
         EQUB    $03,$03,$07,$07,$07,$06,$0E,$0E
         EQUB    $C0,$0C,$0E,$0E,$0E,$07,$03,$03
         EQUB    $12,$03,$01,$00,$00,$00,$00,$00
-        EQUB    $84,$0C,$08,$00,$00,$00,$00,$00
 
 ; $3DC0 - Repton Standing looking left - legs
+        EQUB    $84,$0C,$08,$00,$00,$00,$00,$00
         EQUB    $30,$03,$07,$07,$07,$0E,$0C,$0C
         EQUB    $0C,$0C,$0E,$0E,$0E,$06,$07,$07
         EQUB    $48,$0C,$04,$00,$00,$00,$00,$00
-        EQUB    $11,$11,$11,$00,$00,$00,$11,$11
 
 ; $3DE0 - Monster left hand up - legs
+        EQUB    $11,$11,$11,$00,$00,$00,$11,$11
         EQUB    $FC,$FC,$FC,$FC,$FC,$FE,$FF,$FF
         EQUB    $E6,$E6,$E6,$E6,$E6,$FF,$FF,$FF
         EQUB    $EE,$44,$00,$00,$00,$88,$CC,$EE
-        EQUB    $77,$22,$00,$00,$00,$11,$33,$77
 
 ; $3E00 - Monster right hand up - legs
+        EQUB    $77,$22,$00,$00,$00,$11,$33,$77
         EQUB    $76,$76,$76,$76,$76,$FF,$FF,$FF
         EQUB    $F3,$F3,$F3,$F3,$F3,$F7,$FF,$FF
         EQUB    $88,$88,$88,$00,$00,$00,$88,$88
-        EQUB    $88,$88,$0A,$D8,$01,$8E,$A8,$00
 
 ; $3E20 - Big explosion - middle bottom
+        EQUB    $88,$88,$0A,$D8,$01,$8E,$A8,$00
         EQUB    $B6,$0B,$84,$5A,$0D,$B0,$09,$20
         EQUB    $1C,$C6,$2C,$0D,$78,$0C,$B0,$0C
         EQUB    $55,$11,$A2,$08,$37,$00,$40,$22
-        EQUB    $33,$44,$46,$54,$01,$44,$00,$22
 
 ; $3E40 - Medium explosion - middle bottom
+        EQUB    $33,$44,$46,$54,$01,$44,$00,$22
         EQUB    $B6,$0E,$84,$4A,$8D,$B0,$09,$AA
         EQUB    $3A,$C6,$2A,$0D,$78,$0C,$B1,$4C
         EQUB    $44,$00,$EE,$08,$26,$00,$44,$00
-        EQUB    $33,$00,$02,$11,$01,$00,$00,$00
 
 ; $3E60 - Small explosion - middle bottom
+        EQUB    $33,$00,$02,$11,$01,$00,$00,$00
         EQUB    $B4,$0E,$A4,$0A,$8D,$88,$09,$AA
         EQUB    $3B,$C7,$2A,$0D,$7B,$0C,$BB,$4C
         EQUB    $44,$00,$CC,$08,$00,$00,$00,$00
-        EQUB    $F0,$F0,$F0,$F0,$E0,$D0,$B0,$70
 
 ; $3E80 - Cracked Egg - middle bottom
+        EQUB    $F0,$F0,$F0,$F0,$E0,$D0,$B0,$70
         EQUB    $A0,$D0,$B0,$70,$F0,$70,$B0,$70
         EQUB    $B0,$D0,$A0,$70,$B0,$D0,$B0,$70
         EQUB    $B0,$70,$F0,$70,$B0,$D0,$E0,$D0
-        EQUB    $66,$44,$00,$00,$00,$00,$11,$11
 
 ; 3EA0 - Monster standing - legs
+        EQUB    $66,$44,$00,$00,$00,$00,$11,$11
         EQUB    $FC,$FC,$FC,$FC,$FC,$FE,$FF,$FF
         EQUB    $E6,$E6,$E6,$E6,$E6,$EE,$FF,$FF
         EQUB    $CC,$44,$00,$00,$00,$00,$00,$00
-        EQUB    $01,$01,$01,$01,$01,$03,$07,$0F
 
 ; $3EC0 - Repton Standing - feet
+        EQUB    $01,$01,$01,$01,$01,$03,$07,$0F
         EQUB    $0C,$08,$08,$08,$08,$08,$08,$00
         EQUB    $03,$01,$01,$01,$01,$01,$01,$00
         EQUB    $08,$08,$08,$08,$08,$0C,$0E,$0F
-        EQUB    $00,$01,$01,$01,$01,$03,$07,$0F
 
 ; $3EE0 - Repton Standing looking right - feet
+        EQUB    $00,$01,$01,$01,$01,$03,$07,$0F
         EQUB    $0C,$0C,$0C,$08,$08,$08,$08,$00
         EQUB    $03,$01,$01,$01,$01,$01,$01,$00
         EQUB    $08,$08,$08,$08,$08,$0C,$0E,$0F
-        EQUB    $01,$01,$01,$01,$01,$03,$07,$0F
+
 
 ; $3F00 - Repton Standing looking left - feet
+        EQUB    $01,$01,$01,$01,$01,$03,$07,$0F
         EQUB    $0C,$08,$08,$08,$08,$08,$08,$00
         EQUB    $03,$03,$03,$01,$01,$01,$01,$00
         EQUB    $00,$08,$08,$08,$08,$0C,$0E,$0F
-        EQUB    $11,$33,$33,$33,$33,$33,$77,$99
 
 ; $3F20 - Monster left hand up - feet
+        EQUB    $11,$33,$33,$33,$33,$33,$77,$99
         EQUB    $FC,$B8,$B8,$20,$20,$20,$88,$44
         EQUB    $A2,$00,$00,$00,$00,$00,$00,$00
         EQUB    $99,$00,$00,$00,$00,$00,$00,$00
-        EQUB    $99,$00,$00,$00,$00,$00,$00,$00
 
 ; $3F40 - Monster right hand up - feet
+        EQUB    $99,$00,$00,$00,$00,$00,$00,$00
         EQUB    $54,$00,$00,$00,$00,$00,$00,$00
         EQUB    $F3,$D1,$D1,$40,$40,$40,$11,$22
         EQUB    $88,$CC,$CC,$CC,$CC,$CC,$EE,$99
-        EQUB    $54,$00,$44,$11,$22,$11,$00,$00
 
 ; $3F60 - Big explosion - bottom
+        EQUB    $54,$00,$44,$11,$22,$11,$00,$00
         EQUB    $00,$29,$60,$01,$14,$77,$00,$22
         EQUB    $01,$A1,$12,$80,$06,$4C,$00,$99
         EQUB    $00,$44,$00,$00,$44,$88,$88,$00
-        EQUB    $11,$00,$00,$11,$00,$00,$00,$00
 
 ; $3F80 - Medium explosion - bottom
+        EQUB    $11,$00,$00,$11,$00,$00,$00,$00
         EQUB    $00,$2B,$66,$01,$55,$00,$00,$00
         EQUB    $89,$AA,$9B,$88,$66,$00,$00,$00
         EQUB    $00,$00,$00,$00,$00,$00,$00,$00
-        EQUB    $00,$00,$00,$00,$00,$00,$00,$00
 
 ; $3FA0 - Small explosion - bottom
+        EQUB    $00,$00,$00,$00,$00,$00,$00,$00
         EQUB    $44,$23,$22,$00,$00,$00,$00,$00
         EQUB    $88,$AA,$88,$00,$00,$00,$00,$00
         EQUB    $00,$00,$00,$00,$00,$00,$00,$00
-        EQUB    $70,$70,$70,$70,$30,$30,$10,$00
 
 ; $3FC0 - Cracked Egg - bottom
+        EQUB    $70,$70,$70,$70,$30,$30,$10,$00
         EQUB    $A0,$D0,$E0,$F0,$E0,$D0,$B0,$70
         EQUB    $F0,$D0,$A0,$70,$F0,$70,$B0,$C0
         EQUB    $A0,$60,$E0,$E0,$C0,$C0,$80,$00
-        EQUB    $11,$33,$33,$33,$33,$33,$77,$99
 
 ; 3FE0 - Monster standing - feet
+        EQUB    $11,$33,$33,$33,$33,$33,$77,$99
         EQUB    $FC,$B8,$B8,$10,$10,$10,$88,$44
         EQUB    $F7,$B3,$B3,$11,$11,$11,$33,$55
         EQUB    $00,$88,$88,$88,$88,$88,$CC,$22

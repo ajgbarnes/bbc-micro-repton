@@ -65,7 +65,7 @@
 ; 50    --    --    --
 ; 51    --    --    --
 ; 52    F#3   A3    C3
-; [--Ends here by default (code looks for 52 notes)--]
+; [--Ends here by default (code looks for 52 notes)--] 
 ; 53    --    --    --
 ; 54    --    --    --
 ; 55    --    --    --
