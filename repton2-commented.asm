@@ -42,18 +42,24 @@ FSCV_LSB = $021E
 
 
 zp_screen_write_address_lsb = $0000
+zp_source_tile_lsb=$0000
+zp_map_x_cache=$0000
 zp_screen_write_address_msb = $0001
+zp_source_tile_msb=$0001
 zp_tile_load_address_lsb = $0002
+zp_target_screen_address_lsb=$0002
 zp_tile_load_address_msb = $0003
+zp_target_screen_address_msb=$0003
 zp_sprite_parts_to_copy_or_blank = $0004
 zp_tile_x_pos_cache=$0006
+zp_object_width_working_counter=$0006
 zp_tile_y_pos_cache=$0007
+zp_object_height_working_counter=$0007
 zp_general_xpos_lookup_calcs=$0008
 zp_general_ypos_lookup_calcs=$0009
 zp_object_or_string_address_lsb = $000A
 zp_object_or_string_address_msb = $000B
 
-; Overloaded
 zp_required_sound_channel=$0000
 zp_sound_block_channel_lsb=$0001
 zp_sound_block_channel_msb=$0002
@@ -64,13 +70,15 @@ zp_sound_block_pitch_msb=$0006
 zp_sound_block_duration_lsb=$0007
 zp_sound_block_duration_msb=$0008
 
+
+
 zp_game_screen_column_to_draw = $000E
-; Overloaded
 zp_print_zero_or_not_flag =$000F
 zp_game_screen_row_to_draw = $000F
 zp_display_value_msb = $0010
+zp_new_tile_xpos=$0010
 zp_display_value_mlsb = $0011
-; Overloaded
+zp_new_tile_ypos=$0011
 zp_display_value_lsb = $0012
 zp_visible_screen_top_left_xpos_cache = $0012
 zp_visible_screen_top_left_ypos_cache = $0013
@@ -92,14 +100,19 @@ zp_password_current_character_cache = $006B
 zp_screen_write_address_lsb=$0070
 zp_screen_password_lookup_lsb=$0070
 zp_starting_bit_offset_lsb_cache=$0070
+zp_cached_object_id=$0070
+zp_screen_start_address_lsb_div8=$0070
 ; Dual function zp address
 zp_screen_write_address_msb=$0071
 zp_screen_password_lookup_msb=$0071
 zp_starting_bit_offset_msb_cache=$0071
+zp_map_object_update_lsb=$0071
+zp_screen_start_address_msb_div8=$0071
 ; Dual function zp address
 zp_screen_dissolve_iterations=$0072
 zp_screen_password_lookup_index=$0072
 zp_object_index_lsb=$0072
+zp_map_object_update_msb=$0072
 zp_random_byte_source_lsb=$0073
 zp_object_index_msb=$0073
 zp_random_byte_source_msb=$0074
@@ -107,14 +120,21 @@ zp_object_index_lsb_cache=$0074
 zp_object_index_msb_cache=$0075
 
 zp_object_id=$0076
-
+zp_map_x = $0076
 zp_nth_object_index_lsb=$0077
+zp_map_y = $0077
+
 zp_nth_object_index_msb=$0078
 
 zp_current_map_cache_lsb=$0079
 zp_decode_map_counter_lsb=$0079
 zp_current_map_cache_msb=$007A
 zp_decode_map_counter_msb=$007A
+
+zp_visible_screen_top_left_xpos_cache=$007C
+zp_visible_screen_top_left_ypos_cache=$007D
+
+
 zp_string_to_display_current_byte = $007E
 zp_screen_write_total_byte_counter = $007F
 zp_sound_note_index=$007F
