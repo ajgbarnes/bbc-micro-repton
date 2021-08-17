@@ -2908,17 +2908,32 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; (10b) X < 4 but by default contains the 
         ; the number of horizontal tiles to copy
+        ; But because it's the left edge need to invert
+        ; which tiles are needed
         TXA
         STA     zp_object_width_default_counter
 
+        ; This means:
+        ; If A is 0 - 0000 0000 EOR 0000 0011 = 0000 0011
+        ; If A is 1 - 0000 0001 EOR 0000 0011 = 0000 0010
+        ; If A is 2 - 0000 0010 EOR 0000 0011 = 0000 0001
+        ; If A is 3 - 0000 0011 EOR 0000 0011 = 0000 0000
         EOR     #$03
 
+        ; Add 1 to make it 1-4 based for the multiplication
+        ; and multiply by 8 so it gives the nth tile that
+        ; needs to be copied first
         CLC
         ADC     #$01
+
+        ; Multiply by 8
         ASL     A
         ASL     A
         ASL     A
 
+        ; Add this to the memory location of the source
+        ; tile to get to the nth tile of this object's
+        ; horizontal row first
         CLC
         ADC     zp_source_tile_lsb
         STA     zp_source_tile_lsb
