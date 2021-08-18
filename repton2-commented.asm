@@ -44,6 +44,8 @@ FSCV_LSB = $021E
 zp_screen_write_address_lsb = $0000
 zp_source_tile_lsb=$0000
 zp_map_x_cache=$0000
+zp_screen_start_address_lsb_div8=$0000
+zp_screen_start_address_msb_div8=$0001
 zp_screen_write_address_msb = $0001
 zp_source_tile_msb=$0001
 zp_tile_load_address_lsb = $0002
@@ -97,24 +99,26 @@ zp_music_block_duration_msb=$0067
 zp_password_character_count = $006A
 zp_password_current_character_cache = $006B
 ; Dual function zp address
-zp_screen_write_address_lsb=$0070
+zp_dissolve_screen_write_address_lsb=$0070
 zp_screen_password_lookup_lsb=$0070
 zp_starting_bit_offset_lsb_cache=$0070
 zp_cached_object_id=$0070
 zp_screen_start_address_lsb_div8=$0070
 ; Dual function zp address
-zp_screen_write_address_msb=$0071
+zp_dissolve_screen_write_address_msb=$0071
 zp_screen_password_lookup_msb=$0071
 zp_starting_bit_offset_msb_cache=$0071
 zp_map_object_update_lsb=$0071
 zp_screen_start_address_msb_div8=$0071
 ; Dual function zp address
-zp_screen_dissolve_iterations=$0072
+zp_dissolve_screen_iterations=$0072
 zp_screen_password_lookup_index=$0072
 zp_object_index_lsb=$0072
 zp_map_object_update_msb=$0072
+zp_map_xpos_for_safe_change=$0072
 zp_random_byte_source_lsb=$0073
 zp_object_index_msb=$0073
+zp_map_ypos_for_safe_change=$0073
 zp_random_byte_source_msb=$0074
 zp_object_index_lsb_cache=$0074
 zp_object_index_msb_cache=$0075
@@ -123,6 +127,8 @@ zp_object_id=$0076
 zp_map_x = $0076
 zp_nth_object_index_lsb=$0077
 zp_map_y = $0077
+zp_map_x_for_safe_change=$0077
+zp_map_y_for_safe_change=$0078
 
 zp_nth_object_index_msb=$0078
 
@@ -328,7 +334,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; TODO Not sure what this does yet
         LDA     #$0E
         ; 72
-        STA     zp_screen_dissolve_iterations
+        STA     zp_dissolve_screen_iterations
 
         ; Allow maskable interrupts
         CLI
@@ -1755,12 +1761,281 @@ INCLUDE "repton-third-chord-note.asm"
 
         JMP     move_to_next_x_pos
 ;...
+
+.L121E
+        STA     zp_visible_screen_top_left_xpos_cache
+
+        ; Screen horiztonal relative positions on rows $0E $11
+        ; <..> represents four tiles wide and the position
+        ; number is above the left most tile (the <)
+        ; 
+        ;      $02 $06 $0A $0E $12 $16  ->
+        ;      <..><..><..><..><..><..> ->
+        ; $0E       P2  P1  R
+        ; $11
+
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$0E
+        TAX
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0E
+        TAY
+        LDA     zp_visible_screen_top_left_xpos_cache
+        JSR     L1253
+
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$0E
+        TAX
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$11
+        TAY
+        LDA     zp_visible_screen_top_left_xpos_cache
+        JSR     L1253
+
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$11
+        TAX
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0E
+        TAY
+        LDA     zp_visible_screen_top_left_xpos_cache
+        JMP     L1253
+
+
+.L1253
+        ; Preserve whatever was in A
+        PHA
+        
+        ; Divide the xpos by 4 to get the location
+        ; on the 32x32 grid
+        TXA
+        LSR     A
+        LSR     A
+        TAX
+
+
+        ; Divide the ypos by 4 to get the location
+        ; on the 32x32 grid
+        TYA
+        LSR     A
+        LSR     A
+        TAY
+
+        ; Lookup the object at this map position
+        ; A will contain the object id
+        ; zp_object_or_string_address_lsb/msb will
+        ; contain the address on the current map
+        ; where the object is referenced
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Set Y to 0
+        LDY     #$00
+
+        ; Check to see if the object is a diamond ($1E) at 
+        ; this position, if it isn't then branch ahead
+        CMP     #$1E
+        BNE     L127C
+
+        ; It's a diamond ($1E)
+
+        ; Reduce the number of diamonds left to collect
+        DEC     var_number_diamonds_left
+
+        ; Add 50 to the score (it will be added in BCD mode
+        ; so it's 50 not 80 in decimal)
+        LDA     #$50
+        JSR     fn_add_to_score
+
+        ; Set the sound channel to 3 ($x3) with 
+        ; the immediate flush of the sound channel
+        ; to play the note ($1x)
+        LDA     #$13
+        STA     zp_required_sound_channel
+
+        ; Play the current note 
+        ; $0000 - set to the required sound channel
+        ; A     - set to the amplitude
+        ; X     - set to the pitch (note)
+        ; Y     - set to the duration
+        ; Use Envelope 1
+        LDA     #$01
+        ; Just below C#5
+        LDX     #$C8
+        LDY     #$01
+        JSR     fn_play_music_sound
+
+        LDY     #$00
+.L127C
+        LDA     (zp_object_or_string_address_lsb),Y
+
+        ; Any type of earth scores 1 point
+        ; So check if repton scooped up some
+        ; Earth 1 ($18), Earth 2 ($19) or the
+        ; Green Mesh Earth ($1A)
+
+        ; If < $18 branch ahead
+        CMP     #$18
+        BCC     L128B
+
+        ; if >=  $1B branch ahead
+        CMP     #$1B
+        BCS     L128B
+
+        ; Add 1 to the score
+        LDA     #$01
+        JSR     fn_add_to_score
+
+.L128B
+        ; Check to see if Repton picked up a key
+        ; by looking up the object at the current position
+        ; on the map
+        LDA     (zp_object_or_string_address_lsb),Y
+        CMP     #$1B
+        ; If it wasn't a key branch ahead
+        BNE     L12A6
+
+        ; Repton picked up a key
+
+        ; Cache the object map position
+        LDA     zp_object_or_string_address_lsb
+        STA     L000C
+        LDA     zp_object_or_string_address_msb
+        STA     L000D
+
+        ; Change all the safes to diamonds
+        JSR     fn_change_safes_to_diamonds
+
+        ; Restore the object map position
+        LDA     L000C
+        STA     zp_object_or_string_address_lsb
+        LDA     L000D
+        STA     zp_object_or_string_address_msb
+        LDY     #$00
+.L12A6
+        ; Restore whatever was in A
+        PLA
+        STA     (zp_object_or_string_address_lsb),Y
+        RTS        
+
+;12AA
+.fn_change_safes_to_diamonds
+        ; Changes all the safes to diamonds
+        ; by looping through every cell of the current
+        ; map and looking for object $17 (safe) and replacing
+        ; with $1E (diamond).  Starts at the bottom right
+        ; corner and works back column by column
+
+        ; Set y to 31
+        LDA     #$1F
+        STA     zp_map_y_for_safe_change
+;12AE
+.reset_to_end_of_row_object
+        ; Set x to 31 
+        LDA     #$1F
+        STA     zp_map_x_for_safe_change
+;12B2
+.start_previous_column
+        ; Lookup the object at the (x,y)
+        ; on the current map 
+        ; A will contain the object id on return
+        ; zp_object_or_string_address_lsb/msb will
+        ; contain the address on the current map
+        ; where the object is referenced
+        LDX     zp_map_x_for_safe_change
+        LDY     zp_map_y_for_safe_change
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Is the object at this position a safe?
+        ; If not, branch away
+        CMP     #$17
+        BNE     move_to_next_object
+
+        ; It's a safe
+
+        ; Update the current map so that that 
+        ; object is now a diamond ($1E) 
+        ; instead of a safe
+        LDY     #$00
+        LDA     #$1E
+        STA     (zp_object_or_string_address_lsb),Y
+
+        ; Translate x from a 32x32 lookup to
+        ; the 128x128 xpos tile lookup on the map
+        LDA     zp_map_x_for_safe_change
+        ASL     A
+        ASL     A
+        STA     zp_map_xpos_for_safe_change
+
+        ; Set the horizontal object part counter
+        ; (each object is 4 tiles wide)
+        LDA     #$04
+        STA     zp_object_x_parts_for_safe_change
+
+;12CD
+.loop_move_to_next_tile_row
+        ; Translate y from a 32x32 lookup to
+        ; the 128x128 ypos tile lookup on the map
+        LDA     zp_map_y_for_safe_change
+        ASL     A
+        ASL     A
+        STA     zp_map_ypos_for_safe_change
+
+        ; Set the vertical object part counter
+        ; (each object is 4 tiles high)
+        LDA     #$04
+        STA     zp_object_y_parts_for_safe_change
+
+;12D7
+.loop_move_to_next_tile_column
+        ; Lookup the current safe tile to 
+        ; display on the screen
+        LDY     zp_map_ypos_for_safe_change
+        LDX     zp_map_xpos_for_safe_change
+        JSR     fn_lookup_screen_tile_for_xpos_ypos
+
+        ; Display the tile on the screen (if it's visible)
+        JSR     fn_display_tile
+
+        ; Each object is 4 tiles high so move
+        ; to the next (lower down the screen)
+        ; tile
+        INC     zp_map_ypos_for_safe_change
+        DEC     zp_object_y_parts_for_safe_change
+        BNE     loop_move_to_next_tile_column
+
+        ; Each object is 4 tiles wide so move
+        ; to the next column of tiles
+        INC     zp_map_xpos_for_safe_change
+        DEC     zp_object_x_parts_for_safe_change
+        BNE     loop_move_to_next_tile_row
+
+;12ED
+.move_to_next_object
+        ; Move to the previous object on the row
+        ; and loop if the start of the row hasn't 
+        ; been reached
+        DEC     zp_map_ypos_for_safe_change
+        BPL     start_previous_column
+
+        ; Move to the previous row
+        ; and loop if there are still more
+        ; to process    
+        DEC     zp_map_y_for_safe_change
+        BPL     reset_to_end_of_row_object
+
+        RTS        
+
 ; TODO FOUR PAGES
 ;...
 
 ;16E2
 .fn_wait_120ms
-
         ; Wait 6 * 20 ms = 120 ms
         LDX     #$06
         
@@ -2494,7 +2769,7 @@ INCLUDE "repton-third-chord-note.asm"
         STA     var_score_lsb
         LDA     var_score_mlsb
         ADC     #$00
-        STA     var_score_mlsb
+        STA     var_score_mlsbc
         LDA     var_score_msb
         ADC     #$00
         STA     var_score_msb
@@ -3229,7 +3504,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Return
         RTS          
-;...
+
 ;1B22
 .fn_update_6845_screen_start_address
         ; Changes the screen start address in the 6845 
@@ -3660,7 +3935,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Then the absolute position from the top left of
         ; the screen would be (15-2,19-4) = (13,15)
 
-        ; Adjust the X coordinaet
+        ; Adjust the X coordinate
         TXA
         SEC
         SBC     zp_visible_screen_top_left_xpos
@@ -3980,10 +4255,23 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;1CD6
 .fn_move_repton_left
-        ; TODO - not quite true - xpos can be between 0 and 255
-        ; The top left location is based on a 128x128 grid
-        ; So (xpos,ypos) will be between 0 and 127
+        ; The top left location is based on a 256x256 grid of tiles
+        ; but the main map is only 128x128 - anything above $7F in
+        ; either direction is considered off map and shows the 
+        ; default tile
         LDA     zp_visible_screen_top_left_xpos
+
+        ; -----------------------------------------------------
+        ; Check P1
+        ; -----------------------------------------------------
+
+        ; Screen horiztonal relative positions on row $0E
+        ; <..> represents four tiles wide and the position
+        ; number is above the left most tile (the <)
+        ; 
+        ;      $02 $06 $0A $0E $12 $16  ->
+        ;      <..><..><..><..><..><..> ->
+        ; $0E       P2  P1  R
 
         ; P1 <- Repton
         ; Check what is in position 1 (P1)
@@ -4019,23 +4307,19 @@ INCLUDE "repton-third-chord-note.asm"
         LSR     A
         TAY
 
-
         ; Lookup the tile to the right of Repton
         ; (xpos,ypos) are stored in X and Y
         JSR     fn_lookup_screen_object_for_x_y
-
 
         ; Is it a solid object? If so branch
         ; as repton cannot move left
         CMP     #$18
         BCC     end_move_repton_left
 
-
         ; Is it a diamond or empty (A >= $1E)
         ; if so move repton left
         CMP     #$1E
         BCS     move_repton_left
-
 
         ; Is it a earth, a key or green earth?
         ; $17 < A < $1C
@@ -4056,14 +4340,18 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     L000B
         STA     zp_map_object_update_msb
 
+        ; -----------------------------------------------------
+        ; Check P2
+        ; -----------------------------------------------------
+
         ; P2 <- P1 <- Repton
         ;
         ; Check what is in position 2 (P2)
         ; to see if the egg or rock can move there
         ;
-        ; Add $09 / 9 to the xpos to get the
-        ; start of the next object position 
-        ; to the right of repton's current position
+        ; Add $09 to xpos to get the right most
+        ; tile of P2 
+        ;
         ; (Repton is at xpos +$0E and is 4 tiles wide
         ; so the object two to the left is 
         ; xpos +$09)
@@ -4104,6 +4392,9 @@ INCLUDE "repton-third-chord-note.asm"
         CMP     #$1F
         BNE     end_move_repton_left
 
+        ; -----------------------------------------------------
+        ; Repton can move left - blank P1 and update map
+        ; -----------------------------------------------------
         ; Reload the object id for what is to the
         ; left of Repton
         LDA     zp_cached_object_id
@@ -4119,30 +4410,42 @@ INCLUDE "repton-third-chord-note.asm"
         ; empty space ($1F) where the rock or egg
         ; was (where repton is moving to)
         LDA     #$1F
+
         ; Y is already zero at this point from
-        ; above so Spare Bytes - 2
+        ; above so could save Spare Bytes - 2
         LDY     #$00
         STA     (L0071),Y
 
+        ; Set the xpos to point at P1
         LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$0A
         TAX
 
+        ; Set the xpos to point at P1
         LDA     zp_visible_screen_top_left_ypos
         CLC
         ADC     #$0E
         TAY
 
+        ; Set A to $00 to indicate that an object should
+        ; be removed from the screen at this position
+        ; (one to the left of repton)
         LDA     #$00
 
+        ; Blank the object on the screen
         JSR     fn_draw_or_blank_object
 
+        ; -----------------------------------------------------
+        ; Repton can move left - draw P2 and update map
+        ; -----------------------------------------------------
+        ; Set the xpos to point at P2
         LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$06
         TAX
 
+        ; Set the ypos to point at P2
         LDA     zp_visible_screen_top_left_ypos
         CLC
         ADC     #$0E
@@ -4153,23 +4456,23 @@ INCLUDE "repton-third-chord-note.asm"
         ; which is the first tile at the start
         ; of the data tiles
         LDA     #LO(data_tiles)
-        STA     L0000
+        STA     zp_source_tile_lsb
         LDA     #HI(data_tiles)
-        STA     L0001
+        STA     zp_source_tile_msb
 
         ; Is it a rock or an egg that's moving? 
         ; If a rock then branch ahead        
         LDA     zp_cached_object_id
         CMP     #$1D
-        BEQ     left_is_an_egg
+        BEQ     draw_egg_or_rock_to_left
 
         ; Otherwise it's an egg so 
         ; set the lsb to be the egg's first tile 
-        ;  instead of the rock
+        ; instead of the rock
         LDA     #LO(data_tiles_egg)
-        STA     zp_screen_write_address_lsb
+        STA     zp_source_tile_lsb
 ;1D51
-.left_is_an_egg
+.draw_egg_or_rock_to_left
         ; Draw the egg or rock on the screen
         ; Setting to $FF is asking the sub-routine
         ; to draw the object and reads it from the location
@@ -4290,9 +4593,23 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;1D91
 .fn_move_repton_right
-        ; The top left location is based on a 128x128 grid
-        ; So (xpos,ypos) will be between 0 and 127
+        ; The top left location is based on a 256x256 grid of tiles
+        ; but the main map is only 128x128 - anything above $7F in
+        ; either direction is considered off map and shows the 
+        ; default tile
         LDA     zp_visible_screen_top_left_xpos
+
+        ; -----------------------------------------------------
+        ; Check P1
+        ; -----------------------------------------------------
+
+        ; Screen horiztonal relative positions on row $0E
+        ; <..> represents four tiles wide and the position
+        ; number is above the left most tile (the <)
+        ; 
+        ;      $02 $06 $0A $0E $12 $16  ->
+        ;      <..><..><..><..><..><..> ->
+        ; $0E               R  P1  P2
 
         ; Repton -> P1
         ; Check what is in position 1 (P1)
@@ -4365,6 +4682,10 @@ INCLUDE "repton-third-chord-note.asm"
 
         LDA     L000B
         STA     L0072
+
+        ; -----------------------------------------------------
+        ; Check P2
+        ; -----------------------------------------------------
         
         ; Repton -> P1 -> P2
         ;
@@ -4413,6 +4734,10 @@ INCLUDE "repton-third-chord-note.asm"
         CMP     #$1F
         BNE     end_move_repton_right
 
+        ; -----------------------------------------------------
+        ; Repton can move right - blank P1 and update map
+        ; -----------------------------------------------------
+
         ; Reload the object id for what is to the
         ; right of Repton
         LDA     zp_cached_object_id
@@ -4428,24 +4753,37 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$1F
         STA     (L0071),Y
 
+        ; Set the xpos to point at P1
         LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$12
         TAX
+
+        ; Set the ypos to point at P1
         LDA     zp_visible_screen_top_left_ypos
         CLC
         ADC     #$0E
         TAY
 
-        ; Remove the egg or rock
+        ; Set A to $00 to indicate that an object should
+        ; be removed from the screen at this position
+        ; (one to the left of repton)
         LDA     #$00
+
+        ; Blank the object on the screen
         JSR     fn_draw_or_blank_object
 
+        ; -----------------------------------------------------
+        ; Repton can move left - draw P2 and update map
+        ; -----------------------------------------------------
+        
+        ; Set the xpos to point at P2
         LDA     zp_visible_screen_top_left_xpos
-.L1DEE
         CLC
         ADC     #$16
         TAX
+
+        ; Set the ypos to point at P2
         LDA     zp_visible_screen_top_left_ypos
         CLC
         ADC     #$0E
@@ -4456,25 +4794,25 @@ INCLUDE "repton-third-chord-note.asm"
         ; which is the first tile at the start
         ; of the data tiles
         LDA     #LO(data_tiles)
-        STA     L0000
+        STA     zp_source_tile_lsb
         LDA     #HI(data_tiles)
-        STA     L0001
+        STA     zp_source_tile_msb
 
         ; Is it a rock or an egg that's moving? 
         ; If a rock then branch ahead
         LDA     zp_cached_object_id
         CMP     #$1D
-        BEQ     right_is_an_egg
+        BEQ     draw_egg_or_rock_to_right
 
         ; Otherwise it's an egg so 
         ; set the lsb to be the egg's first tile 
         ;  instead of the rock
         LDA     #LO(data_tiles_egg)
-        STA     L0070
+        STA     zp_source_tile_lsb
 
 ;1E0A
-.right_is_an_egg
-        ; Draw the egg
+.draw_egg_or_rock_to_right
+        ; Draw the object
         LDA     #$FF
         JSR     fn_draw_or_blank_object
 
@@ -5142,9 +5480,9 @@ INCLUDE "repton-third-chord-note.asm"
         ; Reset the screen lookup password
         ; Set the screen start address to 
         LDA     #$00
-        STA     zp_screen_write_address_lsb
+        STA     zp_dissolve_screen_write_address_lsb
         LDA     #$60
-        STA     zp_screen_write_address_msb
+        STA     zp_dissolve_screen_write_address_msb
 .L1F8E
         ; Get a random number
         JSR     fn_generate_random_number
@@ -5172,14 +5510,14 @@ INCLUDE "repton-third-chord-note.asm"
 ;1F9E
 .loop_dissolve_screen_byte
         ; Load the current byte on the screen
-        LDA     (zp_screen_write_address_lsb),Y
+        LDA     (zp_dissolve_screen_write_address_lsb),Y
 
         ; AND the current screen byte with a random byte
         ; between $E000 and $F0FF
         AND     (var_random_byte_source_lsb),Y
 
         ; Write it back to the screen
-        STA     (zp_screen_write_address_lsb),Y
+        STA     (zp_dissolve_screen_write_address_lsb),Y
 
         ; Move to the next screen byte
         INY
@@ -5192,7 +5530,7 @@ INCLUDE "repton-third-chord-note.asm"
         BPL     loop_dissolve_screen_byte
 
         ; Loop over the whole screen N times
-        DEC     zp_screen_dissolve_iterations
+        DEC     zp_dissolve_screen_iterations
         BNE     loop_dissolve_entire_screen
 
         ; OSWRCH &11 / VDU 17
@@ -5915,7 +6253,16 @@ INCLUDE "repton-third-chord-note.asm"
         BNE     loop_get_next_repton_logo_byte_hs
 
         RTS
-;...
+;21CB
+        ; vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+        ; NEVER called
+
+        ; Spare Bytes - 5 
+        ; OSBYTE &13
+        ; Wait for vertical sync
+        LDA     #$13
+        JSR     OSBYTE
+        ; ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ;21D0
 .fn_play_intro_music
@@ -6049,6 +6396,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     ($72),Y
         CMP     #$FF
         BNE     $2230
+
         LDA     $71
         CMP     #$1E
         BCS     $2230
