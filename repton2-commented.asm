@@ -102,35 +102,44 @@ zp_password_current_character_cache = $006B
 zp_dissolve_screen_write_address_lsb=$0070
 zp_screen_password_lookup_lsb=$0070
 zp_starting_bit_offset_lsb_cache=$0070
-zp_cached_object_id=$0070
+zp_cached_object_id=$1a1x
 zp_screen_start_address_lsb_div8=$0070
+zp_map_x_for_rock_drop=$0070
 ; Dual function zp address
 zp_dissolve_screen_write_address_msb=$0071
 zp_screen_password_lookup_msb=$0071
 zp_starting_bit_offset_msb_cache=$0071
 zp_map_object_update_lsb=$0071
 zp_screen_start_address_msb_div8=$0071
+zp_map_y_for_rock_drop=$0071
 ; Dual function zp address
 zp_dissolve_screen_iterations=$0072
 zp_screen_password_lookup_index=$0072
 zp_object_index_lsb=$0072
 zp_map_object_update_msb=$0072
 zp_map_xpos_for_safe_change=$0072
+
 zp_random_byte_source_lsb=$0073
 zp_object_index_msb=$0073
 zp_map_ypos_for_safe_change=$0073
+
 zp_random_byte_source_msb=$0074
 zp_object_index_lsb_cache=$0074
+zp_cached_object_id_for_rock_drop=$0074
+
 zp_object_index_msb_cache=$0075
 
 zp_object_id=$0076
 zp_map_x = $0076
+zp_left_object_index_lsb=$0076
+zp_left_object_index_msb=$0077
 zp_nth_object_index_lsb=$0077
 zp_map_y = $0077
 zp_map_x_for_safe_change=$0077
 zp_map_y_for_safe_change=$0078
 
 zp_nth_object_index_msb=$0078
+zp_cached_object_id_for_rock_drop_r_or_l=$0078
 
 zp_current_map_cache_lsb=$0079
 zp_decode_map_counter_lsb=$0079
@@ -1763,17 +1772,29 @@ INCLUDE "repton-third-chord-note.asm"
 ;...
 
 .L121E
+        ; On entry:
+        ;    A is not used here - cached until end when restored
+        ;    X not required 
+        ;    Y not required
         STA     zp_visible_screen_top_left_xpos_cache
 
-        ; Screen horiztonal relative positions on rows $0E $11
-        ; <..> represents four tiles wide and the position
-        ; number is above the left most tile (the <)
-        ; 
-        ;      $02 $06 $0A $0E $12 $16  ->
-        ;      <..><..><..><..><..><..> ->
-        ; $0E       P2  P1  R
-        ; $11
+        ; This looks at the centre square where Repton is 
+        ; or moving into it and checks the following:
+        ; 1. Top    left  corner of the square
+        ; 2. Botton left corner of the square
+        ; 3. Top    right corner of the square
+        ;
+        ; Square of 4 x 4 tiles:
+        ; ypos            xpos
+        ; [$0E] ...[$0E][$0F][$10][$11]...
+        ; [$0F] ...[$0E][$0F][$10][$11]...
+        ; [$10] ...[$0E][$0F][$10][$11]...
+        ; [$11] ...[$0E][$0F][$10][$11]...
+        ;
 
+        ; Check the top left corner of the square
+        ; (guess it catch when repton moves down or 
+        ; right into the square)
         LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$0E
@@ -1783,8 +1804,11 @@ INCLUDE "repton-third-chord-note.asm"
         ADC     #$0E
         TAY
         LDA     zp_visible_screen_top_left_xpos_cache
-        JSR     L1253
+        JSR     fn_update_score_and_check_if_a_safe
 
+        ; Check the bottom left corner of the square
+        ; (guess it catch when repton moves up into the
+        ; square)
         LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$0E
@@ -1794,8 +1818,11 @@ INCLUDE "repton-third-chord-note.asm"
         ADC     #$11
         TAY
         LDA     zp_visible_screen_top_left_xpos_cache
-        JSR     L1253
+        JSR     fn_update_score_and_check_if_a_safe
 
+        ; Check the top right corner of the square
+        ; (guess it catch when repton moves left into the
+        ; square)
         LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$11
@@ -1805,10 +1832,16 @@ INCLUDE "repton-third-chord-note.asm"
         ADC     #$0E
         TAY
         LDA     zp_visible_screen_top_left_xpos_cache
-        JMP     L1253
+        JMP     fn_update_score_and_check_if_a_safe
 
 
-.L1253
+;1253
+.fn_update_score_and_check_if_a_safe
+        ; 1. Looks at the passed (xpos,ypos) to find the object that's there
+        ; 2. If it's a diamond it adds 50 to the score and plays a sound
+        ; 3. If it's any type of earth it adds 1 to the score
+        ; 4. If it's a key it turns all the safes into diamonds
+
         ; Preserve whatever was in A
         PHA
         
@@ -1818,7 +1851,6 @@ INCLUDE "repton-third-chord-note.asm"
         LSR     A
         LSR     A
         TAX
-
 
         ; Divide the ypos by 4 to get the location
         ; on the 32x32 grid
@@ -1870,6 +1902,8 @@ INCLUDE "repton-third-chord-note.asm"
         LDY     #$01
         JSR     fn_play_music_sound
 
+        ; Reload the object type from the current 
+        ; map memory location
         LDY     #$00
 .L127C
         LDA     (zp_object_or_string_address_lsb),Y
@@ -1997,6 +2031,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; display on the screen
         LDY     zp_map_ypos_for_safe_change
         LDX     zp_map_xpos_for_safe_change
+        ; Calculates zp_object_or_string_address_lsb/msb too
         JSR     fn_lookup_screen_tile_for_xpos_ypos
 
         ; Display the tile on the screen (if it's visible)
@@ -2031,7 +2066,761 @@ INCLUDE "repton-third-chord-note.asm"
 
         RTS        
 
-; TODO FOUR PAGES
+.L12F6
+        ; Routine checks to see if a rock or egg
+        ; is falling and moves it 
+        LDA     #$1E
+        STA     zp_map_y_for_rock_drop
+        LDA     #$1F
+        STA     zp_map_x_for_rock_drop
+        LDA     #$DF
+        STA     zp_object_index_lsb
+        LDA     #$07
+        STA     zp_object_index_msb
+;1306
+.loop_check_rock_drop
+        ; Get the object id at the current 
+        ; map x and y position
+        LDY     #$00
+        LDA     (zp_object_index_lsb),Y
+
+        ; Spare bytes - 2
+        NOP
+        NOP
+
+        ; Check to see if it's a rock or an
+        ; egg  $ 1C =< A < $1E
+        ; Egg  ($1C)
+        ; Rock ($1D)    
+        
+        ; If A < $1C branch away
+        CMP     #$1C
+        BCC     get_previous_x_object
+
+        ; If A >= $1E branch away
+        CMP     #$1E
+        BCS     get_previous_x_object
+
+        ; It's a rock or an egg
+
+        ; TODO Check if a rock falls if the safe
+        ; turned into a diamond?
+
+        ; Check to see if it's falling
+        JSR     L132A
+
+;1317
+.get_previous_x_object
+        ; Move to the previous object in the row
+        DEC     zp_object_index_lsb
+        BNE     check_if_more_x_objects
+
+        ; If there are no more x objects
+        ; move to the previous row
+        DEC     zp_object_index_msb
+;131D
+.check_if_more_x_objects
+        ; Check to see if there are any more
+        ; x objects to process, if so loop
+        DEC     zp_map_x_for_rock_drop
+        BPL     loop_check_rock_drop
+
+        ; Reset the map x index as starting 
+        ; to scan a new row
+        LDA     #$1F
+        STA     zp_map_x_for_rock_drop
+
+        ; Decrement the map y index
+        DEC     zp_map_y_for_rock_drop
+
+        ; If there are still rows to process
+        ; loop back around
+        BPL     loop_check_rock_drop
+
+        ; Return
+        RTS
+
+;132A
+.fn_drop_rock_or_egg
+        ; Map is 32 x 32 and stored each row serialised
+        ; from $0400 to $07FF
+        ;
+        ; Check to see what is below the egg or
+        ; rock by adding looking at the current map
+        ; byte that is offset 32 from the the 
+        ; egg or rock byte
+        LDY     #$20
+        LDA     ($zp_object_index_lsb),Y
+
+        ; If it's isn't an empty space below the rock or egg
+        ; then branch ahead 
+        CMP     #$1F
+        BNE     L13AA
+
+        ; It's an empty space below the rock or egg
+        ; so put a blank in the current rock or egg
+        ; position and put the rock or egg in the 
+        ; empty space below
+
+        ; Get the object id (rock or egg) in the current
+        ; location and cache it
+        LDY     #$00
+        LDA     (zp_object_index_lsb),Y
+        STA     zp_cached_object_id_for_rock_drop
+
+        ; Change the object id to an empty space ($1F) in the
+        ; current location
+        LDA     #$1F
+        LDY     #$00
+        STA     (zp_object_index_lsb),Y
+
+        ; Get the cached object id (rock or egg)
+        ; and write it in the empty space below
+        ; which is 32 bytes further on in the map
+        LDA     zp_cached_object_id_for_rock_drop
+        LDY     #$20
+        STA     (zp_object_index_lsb),Y
+
+        ; Set the sound channel to 0 ($x0) with 
+        ; the immediate flush of the sound channel
+        ; to play the white noise ($1x)
+        LDA     #$10
+        STA     zp_required_sound_channel
+
+        ; Play the egg/rock movement dropping sound
+        ; $0000 - required sound channel
+        ; A     - set to the amplitude
+        ; X     - set to the pitch (note)
+        ; Y     - set to the duration
+        ;
+        ; Equivalent to SOUND &10,-11,4,2 
+        ; A here is not used - it is calculated
+        ; in the function to have a volume that is 
+        ; effectively:
+        ; 
+        ; Amplitude = ((rock or egg y) / 4) - 15
+        LDA     #$F5
+        LDX     #$04
+        LDY     #$02
+        JSR     fn_calc_drop_volume_and_play_sound
+
+        ; Convert the 32x32 map co-ordinates
+        ; into 128x128 tile co-ordinates 
+        ; for the blanking routine
+        
+        ; Convert X into 128x128 by multipying
+        ; by 4 and store in X
+        LDA     zp_map_x_for_rock_drop
+        ASL     A
+        ASL     A
+        TAX
+
+        ; Convert Y into 128x128 by multipying
+        ; by 4 and store in Y
+        LDA     zp_map_y_for_rock_drop
+        ASL     A
+        ASL     A
+        TAY
+
+        ; Blank the egg or rock on the screen
+        ; if it's visible (routine checks)
+        ; Setting A to $00 tells the subroutine
+        ; to blank it
+        LDA     #$00
+        JSR     fn_draw_or_blank_object
+
+        ; Again convert the 32x32 map co-ordinates
+        ; into 128x128 tile co-ordinates 
+        ; for the drawing routine called
+        ; at $137F
+        
+        ; Convert X into 128x128 by multipying
+        ; by 4 and store in X
+        LDA     zp_map_x_for_rock_drop
+        ASL     A
+        ASL     A
+        TAX
+
+        ; Convert Y into 128x128 by multipying
+        ; by 4 and store in Y but this time
+        ; move to the next row (the space 
+        ; below the current position)
+        ; as that's where the rock or egg
+        ; will be drawn 
+        LDA     zp_map_y_for_rock_drop
+        CLC
+        ADC     #$01
+        ASL     A
+        ASL     A
+        TAY
+
+        ; Set the data tile location to the 
+        ; be the first tile of the rock
+        ; which is the first tile at the start
+        ; of the data tiles
+        LDA     #LO(data_tiles)
+        STA     zp_source_tile_lsb
+        LDA     #HI(data_tiles)
+        STA     zp_source_tile_msb
+
+        ; Retrieve the cached object id for the object
+        ; that is dropping
+        LDA     zp_cached_object_id_for_rock_drop
+
+        ; Check to see if it's an egg not a rock
+        ; if so need to adjust the memory starting
+        ; position for the object tiles to $2FE0
+        CMP     #$1D
+        BEQ     draw_egg_or_rock
+
+        ; It's an egg
+        ; So update to $2FE0
+        LDA     #LO(data_tiles_egg)
+        STA     zp_source_tile_lsb
+;137F
+.draw_egg_or_rock
+        ; Draw the egg or rock on the screen
+        ; Setting A to $FF tells the subroutine
+        ; to draw it not blank it
+        LDA     #$FF
+        JSR     fn_draw_or_blank_object
+
+        ; Test to see if looking two rows below
+        ; the current position will take you off map
+        ; This is achieved by adding $40 to the 
+        ; current object's map address and testing it
+        ; is less than $0800
+
+        ; Get the current object's map address LSB
+        LDA     zp_object_index_lsb
+
+        ; Add $40
+        CLC
+        ADC     #$40
+
+        ; Add any carry to the MSB
+        LDA     #$00
+        ADC     zp_object_index_msb
+
+        ; The map is stored between $0400 - $07FF
+        ; so if the addition took it over $07FF
+        ; then branch ahead
+        CMP     #$08
+        BEQ     check_if_egg_cracks
+
+        ; If Repton is two rows below the falling rock
+        ; then he dies
+        LDY     #$40
+        LDA     (zp_object_index_lsb),Y
+
+        ; Check to see if Repton is in this position
+        ; Repton's position is shown as $FF
+        CMP     #$FF
+        BNE     check_if_egg_cracks
+
+        ; Repton was there so kill repton as an
+        ; egg or rock dropped on him
+        JMP     fn_kill_repton   
+
+;139C
+.check_if_egg_cracks
+        ; Check to see if two rows below the falling
+        ; rock is empty - if it is then branch and end
+        ; The check is to because if it's an egg, should
+        ; it crack now? It won't if there's a further
+        ; space for it to fall
+        ;
+        ; Note if the code branched here from $138F then A
+        ; will be $08 so will fail this test (as it should)
+        CMP     #$1F
+        BEQ     end_drop_rock_or_egg
+
+        ; Retrieve the cached object id for the object
+        ; that is dropping 
+        LDA     zp_cached_object_id_for_rock_drop
+        
+        ; Check to see if it's an egg ($1C)
+        ; if it isn't then branch ahead
+        CMP     #$1C
+        BNE     end_drop_rock_or_egg
+
+        ; It's an egg
+
+        JSR     L1558
+
+;13A9
+.end_drop_rock_or_egg
+        RTS          
+
+.L13AA
+        ; Check to see if the rock or egg has
+        ; landed on something it can roll off of
+        ; and if it has do a left, right or left then
+        ; right check
+
+        ; Check to see if it's a diamond ($1E)
+        CMP     #$1E
+        BEQ     check_roll_left_or_right
+
+        ; Check to see if it's a rock ($1D)
+        CMP     #$1D
+        BEQ     check_roll_left_or_right
+
+        ; Check to see if it's an egg ($1C)
+        CMP     #$1C
+        BEQ     check_roll_left_or_right
+
+        ; Check to see if it's two horizontal
+        ; oval bricks with yellow border
+        CMP     #$15
+        BEQ     check_roll_left_or_right
+
+        ; Check to see if it's a top left rounded brick 
+        ; with yellow border left and top
+        CMP     #$00
+        BEQ     fn_roll_rock_left_and_down
+
+        ; Check to see if it's a top left rounded solid 
+        ; with yellow border left and top
+        CMP     #$09
+        BEQ     fn_roll_rock_left_and_down
+
+        ; Check to see if it's a top right rounded brick 
+        ; with yellow border right and top
+        CMP     #$01
+        BEQ     fn_roll_rock_right_and_down
+
+        ; Check to see if it's a top right rounded solid 
+        ; with yellow border right and top
+        CMP     #$0A
+        BEQ     fn_roll_rock_right_and_down
+
+        RTS
+
+;13CB
+.check_roll_left_or_right
+        ; Checks first if it can roll left (guess
+        ; that's crueller as it's more likely to kill repton?)
+        JSR     fn_roll_rock_left_and_down
+
+        ; Check if it can roll right if it couldn't roll left
+        JSR     fn_roll_rock_right_and_down
+
+        ; All rolling complete
+        RTS      
+
+;13D2
+.fn_roll_rock_left_and_down
+
+        ; Rolls a Rock from position "Rock" below into "Pos2"
+        ; and checks if it killed Repton in "Pos3"
+        ;
+        ;              Pos1 Rock
+        ;              Pos2  
+        ;              Pos3
+        ;
+        ; 1. Check Rock is not against the left edge of the map
+        ; 2. Check Pos1 is empty
+        ; 3. Check Pos2 is empty
+        ; 4. Check there is actually a Rock or Egg at "Rock"
+        ; 5. Move the rock or egg from "Rock" to "Pos1" in the current map
+        ; 6. Blank the rock or egg at "Rock" if it's visible on the screen
+        ; 7. Draw the rock or egg in "Pos1" if it's visible on the screen
+
+        ; ---------------------------------------------------------------
+        ; (1) Check Rock is not against the left edge of the map
+        ; ---------------------------------------------------------------
+        ; If the current rock or egg is in the far
+        ; right edge of the map do nothing
+        ; as it cannot fall right
+        LDX     zp_map_x_for_rock_drop
+        ; Subtract 1 and see if the result is less than zero
+        ; (negative)
+        DEX
+        ; Branch and return if it's on the far left
+        BMI     end_roll_rock_right_or_Left_and_down
+
+        ; Rock or egg isn't on the far left
+
+        ; ---------------------------------------------------------------
+        ; (2) Check Pos1 is empty
+        ; ---------------------------------------------------------------
+        ; Check the object to the left of this
+        ; rock or egg on the map
+
+        ; Subtract 1 from the current object's position
+        ; on the map in memory to get to the left hand object
+        LDA     zp_object_index_lsb
+        SEC
+        SBC     #$01
+        ; Cache this
+        STA     zp_left_object_index_lsb
+
+        ; 
+        LDA     zp_object_index_msb
+        SBC     #$00
+        STA     zp_left_object_index_msb
+
+        ; Check the object to the left "Pos1" of this
+        ; rock or egg on the map
+        LDY     #$00
+        LDA     (zp_left_object_index_lsb),Y
+
+        ; Is it empty space ($1F) to the left of the
+        ; rock or get? If not, it cannot fall 
+        CMP     #$1F
+        BNE     end_roll_rock_right_or_Left_and_down
+
+        ; ---------------------------------------------------------------
+        ; (3) Check Pos2 is empty
+        ; ---------------------------------------------------------------
+        ; Check the object to the left and down "Pos2"
+        ; from this rock or egg on the map
+        ;
+        ; Each row is $20 long so to get to the next row in the 
+        ; same horizontal position add $20 to the "Pos1" position
+        LDY     #$20
+        LDA     (zp_left_object_index_lsb),Y
+
+        ; Is it empty space ($1F) down and to the left of the
+        ; rock or get? If not, it cannot fall         
+        CMP     #$1F
+        BNE     end_roll_rock_right_or_Left_and_down
+
+        ; ---------------------------------------------------------------
+        ; (4) Check there is actually a Rock or Egg at Rock
+        ; ---------------------------------------------------------------
+        ; Get the object at "Rock" - $0076 at this point is set to 
+        ; Pos1 so set Y to 1 to get back to "Rock"
+        LDY     #$01
+        LDA     (zp_left_object_index_lsb),Y
+
+        ; Cache the object id that's at "Rock"
+        ; Should only be a rock or egg
+        STA     zp_cached_object_id_for_rock_drop_r_or_l
+
+        ; ---------------------------------------------------------------
+        ; (5) Move the rock or egg from "Rock" to "Pos1" in the current map
+        ; ---------------------------------------------------------------
+        ; Move the rock or egg into Pos1
+        LDY     #$00
+        STA     (zp_left_object_index_lsb),Y
+
+        ; Write empty space ($1F) into the "Rock" location
+        LDY     #$01
+        LDA     #$1F
+        STA     (zp_left_object_index_lsb),Y
+
+        ; ---------------------------------------------------------------
+        ; (6) Blank the rock or egg at "Rock" 
+        ;     if it's visible on the screen
+        ; ---------------------------------------------------------------
+        ; Convert X into 128x128 by multipying
+        ; by 4 and store in X
+        LDA     zp_map_x_for_rock_drop
+        ASL     A
+        ASL     A
+        TAX
+
+        ; Convert Y into 128x128 by multipying
+        ; by 4 and store in Y
+        LDA     zp_map_y_for_rock_drop
+        ASL     A
+        ASL     A
+        TAY
+
+        ; Blank the egg or rock on the screen
+        ; if it's visible (routine checks)
+        ; Setting A to $00 tells the subroutine
+        ; to blank it
+        LDA     #$00
+        JSR     fn_draw_or_blank_object
+
+        ; ---------------------------------------------------------------
+        ; (7) Draw the rock or egg in "Pos1" if it's visible on the screen
+        ; ---------------------------------------------------------------
+        ; Use the co-ordinates for left "Pos1" from
+        ; where the dropping rock or egg is "Rock" 
+        LDA     zp_map_x_for_rock_drop
+        SEC
+        ; Subtract 1 from x to get to Pos1
+        SBC     #$01
+        ; Convert X into 128x128 by multipying
+        ; by 4 and store in X        
+        ASL     A
+        ASL     A
+        TAX
+
+        ; Convert Y into 128x128 by multipying
+        ; by 4 and store in Y        
+        LDA     zp_map_y_for_rock_drop
+        ASL     A
+        ASL     A
+        TAY
+
+       ; Set the data tile location to the 
+        ; be the first tile of the rock
+        ; which is the first tile at the start
+        ; of the data tiles
+        LDA     #HI(data_tiles)
+        STA     zp_source_tile_msb        
+        LDA     #LO(data_tiles)
+        STA     zp_source_tile_lsb
+
+        ; Retrieve the cached object id for the object
+        ; that is dropping
+        LDA     zp_cached_object_id_for_rock_drop_left
+        CMP     #$1D
+
+        ; Check to see if it's an egg not a rock
+        ; if so need to adjust the memory starting
+        ; position for the object tiles to $2FE0           
+        BEQ     draw_egg_or_rock_for_drop
+
+        ; It's an egg so point at the egg graphic
+        ; So update to $2FE0
+        LDA     #LO(data_tiles_egg)
+        STA     zp_source_tile_lsb
+
+;1432
+.draw_egg_or_rock_for_drop
+        ; Draw the egg or rock on the screen
+        ; Setting A to $FF tells the subroutine
+        ; to draw it not blank it - will not 
+        ; kill repton as just moving it to Pos1
+        LDA     #$FF
+        JMP     fn_draw_or_blank_object          
+
+;1437
+.end_roll_rock_right_or_Left_and_down
+        RTS
+
+;1438
+.fn_roll_rock_right_and_down
+
+        ; Rolls a Rock from position "Rock" below into "Pos2"
+        ; and checks if it killed Repton in "Pos3"
+        ;
+        ;         Rock Pos1
+        ;              Pos2  
+        ;              Pos3
+        ;
+        ; 1. Check Rock is not against the right edge of the map
+        ; 2. Check Pos1 is empty
+        ; 3. Check Pos2 is empty
+        ; 4. Check there is actually a Rock or Egg at "Rock"
+        ; 5. Move the rock or egg from "Rock" to "Pos2" in the current map
+        ; 6. Blank the rock or egg at "Rock" if it's visible on the screen
+        ; 7. Draw the rock or egg in "Pos2" if it's visible on the screen
+        ;    and check if it killed Repton in "Pos3"
+
+        ; ---------------------------------------------------------------
+        ; (1) Check Rock is not against the right edge of the map
+        ; ---------------------------------------------------------------
+        ; If the current rock or egg is in the far
+        ; right edge of the map do nothing
+        ; as it cannot fall right
+        LDX     zp_map_x_for_rock_drop
+        ; $1F is the far right of the map
+        CPX     #$1F
+        ; Branch and return if it's on the far right
+        BEQ     end_roll_rock_right_or_Left_and_down
+
+        ; Rock or egg isn't on the far right
+
+        ; ---------------------------------------------------------------
+        ; (2) Check Pos1 is empty
+        ; ---------------------------------------------------------------
+        ; Check the object to the right "Pos1" of this
+        ; rock or egg on the map
+        LDY     #$01
+        LDA     (zp_object_index_lsb),Y
+
+        ; Is it empty space ($1F) to the right of the
+        ; rock or get? If not, it cannot fall 
+        CMP     #$1F
+        ; Branch and return if it's not empty space
+        BNE     end_roll_rock_right_or_Left_and_down
+
+        ; ---------------------------------------------------------------
+        ; (3) Check Pos2 is empty
+        ; ---------------------------------------------------------------
+        ; Check the object to the right and down "Pos2"
+        ; from this rock or egg on the map
+        ;
+        ; Each row is $20 long so to get to the next row in the 
+        ; same horizontal position add $20 to the "Rock" position
+        ; but to get to "Pos2" add $21
+        LDY     #$21
+        LDA     (zp_object_index_lsb),Y
+
+        ; Is it empty space ($1F) to the down and to the right of the
+        ; rock or get? If not, it cannot fall         
+        CMP     #$1F
+        BNE     end_roll_rock_right_or_Left_and_down
+
+        ; ---------------------------------------------------------------
+        ; (4) Check there is actually a Rock or Egg at Rock
+        ; ---------------------------------------------------------------
+        ; Get the object at "Rock"
+        LDY     #$00
+        LDA     (zp_object_index_lsb),Y
+
+        ; If it's empty space ($1F) there there is nothing
+        ; to drop - this is performed beacuse there are times
+        ; when a roll left then a roll right is test is performed
+        ; so sometime it may have rolled left already.  This happens
+        ; when a rock is on a diamond or another rock as an example.
+        CMP     #$1F
+        BEQ     end_roll_rock_right_or_Left_and_down
+
+        ; Cache the object id that's at "Rock"
+        ; Should only be a rock or egg
+        STA     zp_cached_object_id_for_rock_drop_r_or_l
+
+        ; ---------------------------------------------------------------
+        ; (5) Move the rock or egg from "Rock" to "Pos2" in the current map
+        ; ---------------------------------------------------------------
+
+        ; Write empty space ($1F) into the "Rock" location
+        LDA     #$1F
+        STA     (zp_object_index_lsb),Y
+
+        ; Get the cached object id
+        LDA     zp_cached_object_id_for_rock_drop_r_or_l
+
+        ; Put the cached object in "Pos2" (right and down)
+        ; from where it was
+        LDY     #$21
+        STA     (zp_object_index_lsb),Y
+
+        ; ---------------------------------------------------------------
+        ; (6) Blank the rock or egg at "Rock" 
+        ; if it's visible on the screen
+        ; ---------------------------------------------------------------
+
+        ; Convert X into 128x128 by multipying
+        ; by 4 and store in X
+        LDA     zp_map_x_for_rock_drop
+        ASL     A
+        ASL     A
+        TAX
+
+        ; Convert Y into 128x128 by multipying
+        ; by 4 and store in Y
+        LDA     zp_map_y_for_rock_drop
+        ASL     A
+        ASL     A
+        TAY
+
+        ; Blank ($00) the rock or egg if it's visible 
+        ; on screen in its original position before 
+        ; it drops
+        LDA     #$00
+        JSR     fn_draw_or_blank_object
+
+        ; ---------------------------------------------------------------
+        ; (7) Draw the rock or egg in "Pos2" if it's visible on the screen
+        ;    and check if it killed Repton in "Pos3"
+        ; ---------------------------------------------------------------
+
+        ; Use the co-ordinates for right and down "Pos2" from
+        ; where the dropping rock or egg is "Rock"
+        LDA     zp_map_x_for_rock_drop
+        CLC
+        ; Add 1 to x to get to Pos2
+        ADC     #$01
+        ; Convert X into 128x128 by multipying
+        ; by 4 and store in X
+        ASL     A
+        ASL     A
+        TAX
+
+        LDA     zp_map_y_for_rock_drop
+        CLC
+        ; Add 1 to y to get to Pos2
+        ADC     #$01
+        ; Convert X into 128x128 by multipying
+        ; by 4 and store in X
+        ASL     A
+        ASL     A
+        TAY
+
+        ; Set the data tile location to the 
+        ; be the first tile of the rock
+        ; which is the first tile at the start
+        ; of the data tiles
+        LDA     #HI(data_tiles)
+        STA     zp_source_tile_msb        
+        LDA     #LO(data_tiles)
+        STA     zp_source_tile_lsb
+
+        ; Retrieve the cached object id for the object
+        ; that is dropping
+        LDA     zp_cached_object_id_for_rock_drop_r_or_l
+
+        ; Check to see if it's an egg not a rock
+        ; if so need to adjust the memory starting
+        ; position for the object tiles to $2FE0        
+        CMP     #$1D
+        BEQ     draw_egg_or_rock_and_check_if_killed
+
+        ; It's an egg so point at the egg graphic
+        ; So update to $2FE0
+        LDA     #LO(data_tiles_egg)
+        STA     zp_source_tile_lsb
+
+;1493
+.draw_egg_or_rock_and_check_if_killed
+        ; Draw the egg or rock on the screen and
+        ; check if it killed repton when it fell
+        ; Setting A to $FF tells the subroutine
+        ; to draw it not blank it
+        LDA     #$FF
+        JMP     fn_draw_rock_right_and_check_repton
+
+;1498
+        ; Spare byte - 1
+        NOP
+
+.L1499
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$0F
+        STA     L0072
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0F
+        STA     L0073
+        LDA     L0980,X
+        CLC
+        ADC     #$04
+        CMP     L0072
+        BCC     L14D2
+
+        LDA     L0981,X
+        CLC
+        ADC     #$04
+        CMP     L0073
+        BCC     L14D2
+
+        LDA     L0072
+        CLC
+        ADC     #$02
+        CMP     L0980,X
+        BCC     L14D2
+
+        LDA     L0073
+        CLC
+        ADC     #$02
+        CMP     L0981,X
+        BCC     L14D2
+
+        JMP     fn_kill_repton
+
+.L14D2
+        RTS        
+; TODO TWO PAGES
 ;...
 
 ;16E2
@@ -2095,9 +2884,19 @@ INCLUDE "repton-third-chord-note.asm"
         ; Switch off Binary Coded Decimal mode
         CLD
 
+        ; Set the sound channel to 0 ($x1) with 
+        ; the immediate flush of the sound channel
+        ; to play the white noise ($1x)
         LDA     #$10
-        STA     zp_screen_write_address_lsb
+        STA     zp_required_sound_channel
 
+        ; Play the crunch sound when Repton dies
+        ; $0000 - required sound channel
+        ; A     - set to the amplitude
+        ; X     - set to the pitch (note)
+        ; Y     - set to the duration
+        ;
+        ; Equivalent to SOUND &10,-15,6,2
         LDA     #$F1
         LDX     #$06
         LDY     #$02
@@ -2168,6 +2967,8 @@ INCLUDE "repton-third-chord-note.asm"
         ADC     #$0E
         TAY
 
+        ; Blank ($00) the object that is in the 
+        ; default position of where Repton will start
         LDA     #$00
         JSR     fn_draw_or_blank_object
 
@@ -2185,6 +2986,13 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$1F
         JSR     L121E
 
+        ; Always seems to pass garbage and never plays a sound
+        ; Channel is set to $E0 at this point
+        ; Amplitude to $1F
+        ; Pitch/White noise to 4
+        ; Duration to 2
+        ;
+        ; Maybe changed laet in development?
         LDY     #$02
         JSR     fn_play_music_sound
 
@@ -2269,7 +3077,7 @@ INCLUDE "repton-third-chord-note.asm"
         STA     zp_object_or_string_address_lsb
         RTS
 
-        ; Spare bytes
+        ; Spare bytes - 2
         NOP
         NOP
 
@@ -3821,6 +4629,9 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;1BBD
 .fn_lookup_screen_object_for_x_y
+        ; TODO  change the STX/STY variable names
+        ; to x and y not x_pos/y_pos
+
         ; Looks up object using (x,y) not (xpos,ypos)
         ; i.e. 32 x 32 co-ordinates
         ; Cache the x and y as the code
@@ -6012,7 +6823,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; There is a main loop counter that 
         ; is incremeneted each time around the
         ; main game loop - it's used here to 
-        ; selected which repton animation sprite
+        ; select which repton animation sprite
         ; to use for standing still
         ;
         ; Sprite index = (counter / 16) AND $03
@@ -6031,7 +6842,7 @@ INCLUDE "repton-third-chord-note.asm"
         TAX
 
         ; Player not trying to move so use the 
-        ; standing idle sprites and lookup based on 0907
+        ; standing idle sprites and lookup based on $0907
         LDA     repton_standing_idle_looking,X
 
 
@@ -6046,20 +6857,31 @@ INCLUDE "repton-third-chord-note.asm"
         ; Switch off Binary Coded Decimal mode
         CLD
 
+        ; Setting A does nothing in the next sub-routine
+        ; it's cached and restored at the end
+        ; Spare bytes - 2 
         LDA     #$FF
         JSR     L121E
 
+        ; A is not used here in this sub-routine either
         JSR     L12F6
 
+        ; Setting A does nothing in the next sub-routine
+        ; it's cached and restored at the end
+        ; Spare bytes - 2 
         LDA     #$1F
         JSR     L121E
 
-        ; Spare byte -1
+        ; Spare byte - 1
         NOP
 
-
+        ; Check to see how many diamonds are left
+        ; if more than zero then the screen has not
+        ; yet been completed
         LDA     var_number_diamonds_left
         BNE     L2138
+
+        ; Zero diamonds left
 
         LDA     zp_visible_screen_top_left_ypos
         CLC
@@ -6093,6 +6915,7 @@ INCLUDE "repton-third-chord-note.asm"
 .L2138
         ; Spare byte - 1
         NOP
+
         JSR     L1588
 
         ; Allow maskable interrupts
@@ -6390,20 +7213,40 @@ INCLUDE "repton-third-chord-note.asm"
         RTS
 
 ;221C
-
+.fn_draw_rock_right_and_check_repton
+        ; Checks to see if Repton is in Pos3 when a Rock or egg
+        ; rolls off to the right from "Rock1".  Pos1 and Pos2 will
+        ; already have been checked to be empty before calling this.
+        ;
+        ;         Rock1 Pos1
+        ;         Rock2 Pos2
+        ;         Obj1  Pos3
+        
+        ; Draw the rock in its new position down and to the right (Pos2)
+        ; from where it was. Note this is always a draw as $FF is 
+        ; always passed in A
         JSR     fn_draw_or_blank_object
-        LDY     #$41
-        LDA     ($72),Y
-        CMP     #$FF
-        BNE     $2230
 
-        LDA     $71
+        ; Get the object that's in Pos3
+        ; Each row is $20 offset and Pos3 is one horizontal
+        ; position to the right too so $20 + $20 + $01
+        LDY     #$41
+        LDA     (zp_object_index_lsb),Y
+
+        ; Is Repton ($FF) at this map position?
+        CMP     #$FF
+        BNE     end_draw_rock_right_and_check_repton
+
+        ; If Y is beyond the last row of the map
+        ; then ignore (as it is a false positive)
+        LDA     zp_map_y_for_rock_drop
         CMP     #$1E
-        BCS     $2230
+        BCS     end_draw_rock_right_and_check_repton
 
         ; Kill repton (lose a life)
         JMP     fn_kill_repton
 ;2230
+.end_draw_rock_right_and_check_repton
         RTS
 
 
@@ -7247,11 +8090,21 @@ fn_check_intro_music
         RTS
 
 ;262C
-        ; TODO
+.fn_calc_drop_volume_and_play_sound
+        ; Calculates the volume of the rock or 
+        ; egg dropping sound based on the current
+        ; map row being evaluated 
+        ; Amplitude = ((rock or egg y) / 4) - 15
         LDA     $71
+
+        ; Divide by 4
         LSR     A
         LSR     A
+
+        ; Subtract 15
         ADC     #$F1
+
+        ; Play the sound
         JMP     fn_play_music_sound
 
 ; 2635
