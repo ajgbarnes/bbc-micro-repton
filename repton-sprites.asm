@@ -32,7 +32,7 @@
         EQUB    $00,$00,$10,$10,$30,$21,$61,$41
 ; $09   Key  (0,1) top middle left curving         
         EQUB    $30,$F0,$C1,$05,$05,$05,$07,$0B
-; $0A   Key  (0,2) top middle right curving        
+; $0A   Key  (0,2) top middle right curving            
         EQUB    $C0,$F0,$38,$0A,$0A,$0A,$0A,$0F
 ; $0B   Key  (0,3) top right       
         EQUB    $00,$00,$80,$80,$C0,$48,$68,$28
@@ -745,12 +745,14 @@
         EQUB    $00,$00,$00,$00,$00,$00,$00,$88
 
 ; $3C00 - Cracked Egg - top
+.sprite_cracked_egg
         EQUB    $00,$00,$00,$00,$10,$10,$10,$30
         EQUB    $10,$50,$E0,$70,$B0,$D0,$E0,$D0
         EQUB    $80,$E0,$F0,$70,$B0,$50,$E0,$D0
         EQUB    $00,$00,$00,$00,$80,$00,$80,$C0
 
 ; 3C20 - Monster standing - head
+.sprite_monster_standing
         EQUB    $00,$11,$11,$11,$11,$11,$11,$00
         EQUB    $FF,$F9,$D9,$D9,$FE,$FB,$FC,$FF
         EQUB    $EE,$F3,$73,$73,$FF,$FB,$F7,$EE
