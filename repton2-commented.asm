@@ -119,10 +119,12 @@ zp_object_index_lsb=$0072
 zp_map_object_update_msb=$0072
 zp_map_xpos_for_safe_change=$0072
 
+zp_repton_xpos=$0073
 zp_random_byte_source_lsb=$0073
 zp_object_index_msb=$0073
 zp_map_ypos_for_safe_change=$0073
 
+zp_repton_xpos=$0074
 zp_random_byte_source_msb=$0074
 zp_object_index_lsb_cache=$0074
 zp_cached_object_id_for_rock_drop=$0074
@@ -153,6 +155,8 @@ zp_visible_screen_top_left_ypos_cache=$007D
 zp_string_to_display_current_byte = $007E
 zp_screen_write_total_byte_counter = $007F
 zp_sound_note_index=$007F
+zp_monster_number=$007F
+
 zp_password_cursor_xpos = $0080
 zp_password_cursor_ypos = $0081
 zp_screen_colour_mask= $0082
@@ -192,6 +196,11 @@ var_player_started_on_screen_x = $0914
 var_score_index = $0920
 var_bubble_sort_pass=$0921
 var_score_to_display_offset=$0921
+
+var_monster_xpos=$0980
+var_monster_ypos=$0981
+
+var_monster_active=$0985
 
 var_restart_pressed=$09FC
 var_note_sequence_number=$09FE
@@ -1860,7 +1869,7 @@ INCLUDE "repton-third-chord-note.asm"
         TAY
 
         ; Lookup the object at this map position
-        ; A will contain the object id
+        ; On return A will contain the object id
         ; zp_object_or_string_address_lsb/msb will
         ; contain the address on the current map
         ; where the object is referenced
@@ -1977,7 +1986,7 @@ INCLUDE "repton-third-chord-note.asm"
 .start_previous_column
         ; Lookup the object at the (x,y)
         ; on the current map 
-        ; A will contain the object id on return
+        ; On return A will contain the object id on return
         ; zp_object_or_string_address_lsb/msb will
         ; contain the address on the current map
         ; where the object is referenced
@@ -2783,45 +2792,404 @@ INCLUDE "repton-third-chord-note.asm"
         ; Spare byte - 1
         NOP
 
-.L1499
+;1499
+.fn_check_monster_collision
+        ; Peforms the following:
+        ; 1. Check to see if right edge of the monster 
+        ;    is overlapping Repton's left hand edge
+        ; 2. Check to see if the bottom edge of the monster 
+        ;    is overlapping Repton's top edge
+        ; 3. Check to see if the right edge of Repton
+        ;    is overlapping the monster's left edge
+        ; 4. Check to see if the bottom edge of Repton
+        ;    is overlapping the monster's top edge
+        ;
+        ; Returns if any of these checks fail i.e.
+        ; the monster is too far to the left or above 
+        ; or to the right or below repton
+        ;
+        ; Only assumes there is a collision if all four
+        ; conditions are true above
+        ;
+        ; Relative to the visible screen's top left, Repton's
+        ; tiles are plotted as below.
+        ; 
+        ;  ypos                  xpos
+        ;  $0E   .........$0E, $0F, $10, $11.........
+        ;  $0F   .........$0E, $0F, $10, $11.........
+        ;  $10   .........$0E, $0F, $10, $11.........
+        ;  $11   .........$0E, $0F, $10, $11.........
+        ;
+        ; 
+        ;-----------------------------------------------------------------------
+        ; (1) Check if right edge of monster overlaps Repton's left edge
+        ;-----------------------------------------------------------------------
+        
+        ; Repton's top left corner is offset ($0E, $0E) from the screen's top
+        ; left corner - add $0F to Repton's xpos to ensure overlap
         LDA     zp_visible_screen_top_left_xpos
         CLC
         ADC     #$0F
-        STA     L0072
+        STA     zp_repton_xpos
+
+        ; Add $0F to Repton's ypos to ensure overlap
         LDA     zp_visible_screen_top_left_ypos
         CLC
         ADC     #$0F
-        STA     L0073
-        LDA     L0980,X
+        STA     zp_repton_ypos
+
+        ; Check to see if the monster is to the left of Repton 
+        ; and overlapping
+        ; 
+        ; If monster (xpos+4) < repton (xpos $0F) then the monster
+        ; isn't overlapping repton so branch and return 
+        ; 
+        ; Get the current monster's xpos
+        LDA     var_monster_xpos,X
         CLC
+        ; Add 4 to the monster's xpos to get one beyond the right edge
         ADC     #$04
-        CMP     L0072
-        BCC     L14D2
+        ; Check if it overlaps
+        CMP     zp_repton_xpos
+        ; Branch if it doesn't overlap
+        BCC     end_check_monster_collision
 
-        LDA     L0981,X
+        ;-----------------------------------------------------------------------
+        ; (2) Check if bottom edge of monster overlaps Repton's top edge
+        ;-----------------------------------------------------------------------
+        ; Get the current monster's ypos
+        LDA     var_monster_ypos,X
+
+        ; Check to see if the monster is above Repton but not touching
+        ; 
+        ; If monster (ypos+4) < repton (ypos $0F) branch and return
+        ; otherwise...
         CLC
+        ; Add 4 to the monster's ypos to get one beyond the bottom edge
         ADC     #$04
-        CMP     L0073
-        BCC     L14D2
+        ; Check if it overlaps
+        CMP     zp_repton_ypos
+        ; Branch if it doesn't overlap
+        BCC     end_check_monster_collision
 
-        LDA     L0072
+        ;-----------------------------------------------------------------------
+        ; (3) Check if right edge of Repton overlaps monster's left edge
+        ;-----------------------------------------------------------------------
+        ; If Repton's right edge isn't touching a monster
+        ; If Repton (xpos $0F + 2 = $11) < monster (xpos) branch and return
+        ; otherwise...
+        LDA     zp_repton_xpos
         CLC
+        ; Add 2 to Repton's xpos to get to the right hand edge
         ADC     #$02
-        CMP     L0980,X
-        BCC     L14D2
+        ; Check if it overlaps with the monster
+        CMP     var_monster_xpos,X
+        ; Branch if it doesn't overlap
+        BCC     end_check_monster_collision
 
-        LDA     L0073
+        ;-----------------------------------------------------------------------
+        ; (4) Check if bottom edge of Repton overlaps monster's top edge
+        ;-----------------------------------------------------------------------
+        ; Check to see if the monster is below repton and not touching
+        ; If repton's (ypos $0F + 2 = $11) < monster (ypos))
+        LDA     zp_repton_ypos
         CLC
+        ; Add 2 to Repton's ypos to get to the bottom edge
         ADC     #$02
-        CMP     L0981,X
-        BCC     L14D2
+        ; Check if it overlaps with the monster
+        CMP     var_monster_ypos,X
+        ; Branch if it doesn't overlap
+        BCC     end_check_monster_collision
 
+        ; Monster touched repton, kill repton!
         JMP     fn_kill_repton
 
-.L14D2
+;14D2
+.end_check_monster_collision
+        RTS        
+
+
+.L14D3
+        ; $007F contains nth monster number
+        LDX     zp_monster_number
+
+        ; Divide the ypos by 4 to get the location
+        ; of the monster on the 32x32 object map grid
+        LDA     var_monster_ypos,X
+        LSR     A
+        LSR     A
+        TAY
+
+        ; Divide the xpos by 4 to get the location
+        ; of the monster on the 32x32 object map grid
+        LDA     var_monster_xpos,X
+        LSR     A
+        LSR     A
+        TAX
+
+        STX     L0070
+        STY     L0071
+
+        ; Lookup the object the is at (x,y) held 
+        ; in X and Y on the 32x32 map definition
+        ; On return A will contain the object id
+        ; zp_object_or_string_address_lsb/msb will
+        ; contain the address on the current map
+        ; where the object is referenced
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Rock ($1D)
+        CMP     #$1D
+        BEQ     fn_kill_monster
+
+        LDX     zp_monster_number
+        LDA     var_monster_ypos,X
+        CLC
+        ADC     #$03
+        LSR     A
+        LSR     A
+        TAY
+
+        LDA     var_monster_xpos,X
+        LSR     A
+        LSR     A
+        TAX
+
+        STX     $0070
+        STY     $0071
+
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Rock ($1D)
+        CMP     #$1D
+        BEQ     fn_kill_monster
+
+        LDX     zp_screen_write_total_byte_counter
+        LDA     var_monster_ypos,X
+        LSR     A
+        LSR     A
+        TAY
+
+        LDA     var_monster_xpos,X
+        CLC
+        ADC     #$03
+        LSR     A
+        LSR     A
+        TAX
+
+        STX     zp_screen_password_lookup_lsb
+        LDY     zp_screen_password_lookup_msb
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Rock ($1D)
+        CMP     #$1D
+        BEQ     fn_kill_monster
+
+        LDX     zp_monster_number
+        RTS
+
+;1527
+.fn_kill_monster
+        ; 1. Blanks the monster on the screen
+        ; 2. Plays the crush sound for the monster
+        ; 3. Draws the rock in the place of the monster
+        ; On entry:
+        ;   Undefined
+        ; On exit:
+        ;   Undefined
+
+        ; Load the current monster number
+        LDX     zp_monster_number
+
+
+        ;-----------------------------------------------------------------------
+        ; (1) Blanks the monster on the screen
+        ;-----------------------------------------------------------------------
+        ; Blank the monster
+        LDA     #$00
+        JSR     fn_draw_or_blank_monster
+
+        ; Never used. Spare bytes - 2
+        LDA     #$11
+
+        ;-----------------------------------------------------------------------
+        ; (2) Play the monster crush sound
+        ;-----------------------------------------------------------------------
+        ; Play the current note 
+        ; $0000 - set to the required sound channel
+        ; A     - set to the amplitude
+        ; X     - set to the pitch (note)
+        ; Y     - set to the duration
+        
+        ; Use Envelope 1
+        LDA     #$01
+        
+        ; Set pitch and duration to 1
+        TAX
+        TAY
+
+        ; Bug? $0000/01 always seem to be set to the
+        ; LSB/MSB of the monster's source tile sprite
+        ; never the right sound channel. 
+        ;
+        ; By luck seems to play with either the sound
+        ; channel set to $60 or $92
+        ; 
+        ; Play the sound that a monster was crushed
+        JSR     fn_play_music_sound
+
+        ; Load the nth monster number but never use it
+        ; Spare bytes - 2
+        LDX     zp_monster_number
+
+        ;-----------------------------------------------------------------------
+        ; (3) Draw the rock that crushed it on the screen
+        ;-----------------------------------------------------------------------
+        ; Set the source graphic to be a rock (the 
+        ; first data tile)
+        LDA     #HI(data_tiles)
+        STA     zp_source_tile_lsb
+        LDA     #LO(data_tiles)
+        STA     zp_source_tile_msb
+
+        ; Convert X into 128x128 by multipying
+        ; by 4 and store in X
+        LDA     zp_map_x_for_rock_drop
+        ASL     A
+        ASL     A
+        TAX
+
+        ; Convert Y into 128x128 by multipying
+        ; by 4 and store in Y
+        LDA     zp_map_y_for_rock_drop
+        ASL     A
+        ASL     A
+        TAY
+
+        ; Draw ($FF) the rock on the screen
+        LDA     #$FF
+        JSR     fn_draw_or_blank_object
+
+        ; Set the nth monster to inactive
+        LDX     zp_monster_number
+        LDA     #$00
+        STA     var_monster_active,X
         RTS        
 ; TODO TWO PAGES
 ;...
+;168E
+.fn_draw_or_blank_monster
+        ; On entry:
+        ;   A - contains whether to blank $00 or draw the monster $01
+        ;   X - Nth monster to draw or blank
+        ; On exit:
+        ;   X - Nth monster 
+        PHA
+
+        ; The game's main loop counter is used to determine
+        ; what drawing state a monster shown in - if the fourth bit
+        ; is set it'll show as right hand up, otherwise left hand up
+        LDA     var_main_loop_counter
+        AND     #$08
+        ; Spare byte - 1 
+        NOP
+
+        ; Work out the offset for left hand or right hand up 
+        ; If bit 4 is clear then it'll use left hand up and a zero offset
+        ; If bit 4 is set   then it'll use right hand up and a 32 offset
+        ; Times by 4 x 8 (32) or 0
+        ASL     A
+        ASL     A
+
+        ; Add the offset if any to the monster left hand up sprite
+        CLC
+        ADC     #LO(sprite_monster_left_hand_up)
+        STA     zp_source_tile_lsb
+        LDA     #HI(sprite_monster_left_hand_up)
+        STA     zp_source_tile_msb
+
+        ; Get the monster's top left ypos
+        LDY     var_monster_ypos,X
+
+        ; Get the monster's top left xpos
+        ; Note - why not LDX? Spare Byte -1 
+        LDA     var_monster_xpos,X
+        TAX
+
+        ; Restore A which tells the next subroutine whether to
+        ; draw the monster with left hand up or blank whatever
+        ; is there
+        PLA
+
+        ; Draw or blank the monster
+        JSR     fn_draw_or_blank_object
+
+        ; Restore the monster number
+        LDX     zp_monster_number
+        RTS
+
+.L16AE
+        ; Cracked egg
+        ; 1. Set the source sprite to be the cracked egg
+        ; 2. Get the nth monster's (xpos, ypos) on the 128x128 map
+        ; 3. Draw the egg at that position
+
+        ; Set the source sprite to be the cracked egg
+        LDA     #HI(sprite_cracked_egg)
+        STA     zp_source_tile_msb
+        LDA     #LO(sprite_cracked_egg)
+        STA     zp_source_tile_lsb
+
+        ; Get the nth monster's xpos and ypos
+        ; on the 128x128 map grid - nth is passed in X
+        LDY     var_monster_ypos,X
+        ; Why not use LDX and free a byte?
+        LDA     var_monster_xpos,X
+        TAX
+
+        ; Draw the cracked egg on the screen
+        ; Setting A to $FF tells the subroutine
+        ; to draw it not blank it
+        LDA     #$FF
+        JSR     fn_draw_or_blank_object
+
+        ; TODO
+        JSR     L14D3
+
+        LDX     L007F
+        RTS
+
+.L16C8
+        ; 1. Set the source sprite to be the monster standing
+        ; 2. Get the nth monster's (xpos, ypos) on the 128x128 map
+        ; 3. Draw the monster standing
+
+        ; Set the source sprite to be the monster
+        ; standing
+        LDA     #HI(sprite_monster_standing)
+        STA     zp_source_tile_msb
+        LDA     #LO(sprite_monster_standing)
+        STA     zp_source_tile_lsb
+
+        ; Get the nth monster's xpos and ypos
+        ; on the 128x128 map grid - nth is passed in X
+        LDY     var_monster_ypos,X
+        ; Why not use LDX and free a byte?
+        LDA     var_monster_xpos,X
+        TAX
+
+        ; Draw the monster on the screen
+        ; Setting A to $FF tells the subroutine
+        ; to draw it not blank it
+        LDA     #$FF
+        JSR     fn_draw_or_blank_object
+
+        ; TODO
+        JSR     L14D3
+
+        ; TODO 
+        LDX     L007F
+        RTS
 
 ;16E2
 .fn_wait_120ms
@@ -6492,7 +6860,7 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$11
         JSR     fn_define_logical_colour
 
-; 2034
+;2034
         ; Display the repton start/pause screen
         JSR     fn_display_repton_start_screen
 
