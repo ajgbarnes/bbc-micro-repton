@@ -105,8 +105,10 @@ zp_starting_bit_offset_lsb_cache=$0070
 zp_cached_object_id=$1a1x
 zp_screen_start_address_lsb_div8=$0070
 zp_map_x_for_rock_drop=$0070
+zp_monster_x=$0070
 ; Dual function zp address
 zp_dissolve_screen_write_address_msb=$0071
+zp_monster_y=$0071
 zp_screen_password_lookup_msb=$0071
 zp_starting_bit_offset_msb_cache=$0071
 zp_map_object_update_lsb=$0071
@@ -2909,10 +2911,24 @@ INCLUDE "repton-third-chord-note.asm"
         RTS        
 
 
-.L14D3
+;14D3
+.fn_check_if_monster_dead
+        ; Checks to see if a monster should be killed 
+        ; by checking with overlap with a rock - it checks
+        ; 1. Top left edge
+        ; 2. Top right edge
+        ; 3. Bottom left edge
+        ;
+        ; Monsters jitter around hence not just checking "above"
+        ; so may be on more than one 32x32 grid location
+
         ; $007F contains nth monster number
         LDX     zp_monster_number
 
+        ; ---------------------------------------------
+        ; (1) Check to see if the monster's top left edge
+        ;    is being crushed by a rock
+        ; ---------------------------------------------
         ; Divide the ypos by 4 to get the location
         ; of the monster on the 32x32 object map grid
         LDA     var_monster_ypos,X
@@ -2927,44 +2943,60 @@ INCLUDE "repton-third-chord-note.asm"
         LSR     A
         TAX
 
-        STX     L0070
-        STY     L0071
+        STX     zp_monster_x
+        STY     zp_monster_y
 
         ; Lookup the object the is at (x,y) held 
         ; in X and Y on the 32x32 map definition
-        ; On return A will contain the object id
-        ; zp_object_or_string_address_lsb/msb will
-        ; contain the address on the current map
-        ; where the object is referenced
         JSR     fn_lookup_screen_object_for_x_y
 
-        ; Rock ($1D)
+        ; Check to see if it's a Rock ($1D)
         CMP     #$1D
         BEQ     fn_kill_monster
 
+        ; ---------------------------------------------
+        ; (2) Check to see if the monster's top right edge
+        ;    is being crushed by a rock
+        ; ---------------------------------------------
+
+        ; Add 3 to the monster's xpos to see what if 
+        ; it's right had edge is being crushed by a rock
+        LDX     zp_monster_number 
+        LDA     var_monster_ypos,X
+        CLC
+        ADC     #$03
+        LSR     A
+        LSR     A
+        TAY
+
+        ; Divide the xpos by 4 to get the location
+        ; of the monster on the 32x32 object map grid
+        LDA     var_monster_xpos,X
+        LSR     A
+        LSR     A
+        TAX
+
+        STX     zp_monster_x
+        STY     zp_monster_y
+
+        ; Lookup the object the is at (x+1,y) held 
+        ; in X and Y on the 32x32 map definition
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Check to see if it's a Rock ($1D)
+        CMP     #$1D
+        BEQ     fn_kill_monster
+
+        ; ---------------------------------------------
+        ; (3) Check to see if the monster's bottom left edge
+        ;    is being crushed by a rock
+        ; ---------------------------------------------
+
+        ; Reload the monster number
         LDX     zp_monster_number
-        LDA     var_monster_ypos,X
-        CLC
-        ADC     #$03
-        LSR     A
-        LSR     A
-        TAY
 
-        LDA     var_monster_xpos,X
-        LSR     A
-        LSR     A
-        TAX
-
-        STX     $0070
-        STY     $0071
-
-        JSR     fn_lookup_screen_object_for_x_y
-
-        ; Rock ($1D)
-        CMP     #$1D
-        BEQ     fn_kill_monster
-
-        LDX     zp_screen_write_total_byte_counter
+        ; Divide the ypos by 4 to get the location
+        ; of the monster on the 32x32 object map grid
         LDA     var_monster_ypos,X
         LSR     A
         LSR     A
@@ -2977,14 +3009,20 @@ INCLUDE "repton-third-chord-note.asm"
         LSR     A
         TAX
 
-        STX     zp_screen_password_lookup_lsb
-        LDY     zp_screen_password_lookup_msb
+        STX     zp_monster_x
+        ; Bug? Looks like it should be STY not LDY
+        ; Y is already loaded with the 32x32 monster ypos
+        LDY     zp_monster_y
+
+        ; Lookup the object the is at (x,y+1) held 
+        ; in X and Y on the 32x32 map definition       
         JSR     fn_lookup_screen_object_for_x_y
 
-        ; Rock ($1D)
+        ; Check to see if it's a Rock ($1D)
         CMP     #$1D
         BEQ     fn_kill_monster
 
+        ; Reload $007F with the nth monster number
         LDX     zp_monster_number
         RTS
 
@@ -3153,10 +3191,11 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$FF
         JSR     fn_draw_or_blank_object
 
-        ; TODO
-        JSR     L14D3
+        ; Check if the monster should be killed
+        JSR     fn_check_if_monster_dead
 
-        LDX     L007F
+        ; Restore the monster number
+        LDX     zp_monster_number
         RTS
 
 .L16C8
@@ -3184,11 +3223,11 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$FF
         JSR     fn_draw_or_blank_object
 
-        ; TODO
-        JSR     L14D3
+        ; Check if the monster should be killed
+        JSR     fn_check_if_monster_dead
 
-        ; TODO 
-        LDX     L007F
+        ; Restore the monster number
+        LDX     zp_monster_number
         RTS
 
 ;16E2
