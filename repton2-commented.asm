@@ -41,6 +41,7 @@ IND1V_MSB =$0231
 FSCV_LSB = $021E
 
 
+zp_logical_physical_colour=$0000
 zp_screen_write_address_lsb = $0000
 zp_source_tile_lsb=$0000
 zp_map_x_cache=$0000
@@ -50,9 +51,13 @@ zp_screen_write_address_msb = $0001
 zp_source_tile_msb=$0001
 zp_tile_load_address_lsb = $0002
 zp_target_screen_address_lsb=$0002
+zp_temp_x_calc=$0002
+zp_temp_x_calc=$0003
 zp_tile_load_address_msb = $0003
 zp_target_screen_address_msb=$0003
 zp_sprite_parts_to_copy_or_blank = $0004
+zp_object_width_default_counter=$0004
+zp_object_height_default_counter=$0005
 zp_tile_x_pos_cache=$0006
 zp_object_width_working_counter=$0006
 zp_tile_y_pos_cache=$0007
@@ -71,8 +76,6 @@ zp_sound_block_pitch_lsb=$0005
 zp_sound_block_pitch_msb=$0006
 zp_sound_block_duration_lsb=$0007
 zp_sound_block_duration_msb=$0008
-
-
 
 zp_game_screen_column_to_draw = $000E
 zp_print_zero_or_not_flag =$000F
@@ -126,7 +129,7 @@ zp_random_byte_source_lsb=$0073
 zp_object_index_msb=$0073
 zp_map_ypos_for_safe_change=$0073
 
-zp_repton_xpos=$0074
+zp_repton_ypos=$0074
 zp_random_byte_source_msb=$0074
 zp_object_index_lsb_cache=$0074
 zp_cached_object_id_for_rock_drop=$0074
@@ -201,8 +204,10 @@ var_score_to_display_offset=$0921
 
 var_monster_xpos=$0980
 var_monster_ypos=$0981
-
-var_monster_active=$0985
+var_monster_xpos_jitter=$0982
+var_monster_ypos_jitter=$0983
+var_monster_wait_counter=$0984
+var_monster_active_status=$0985
 
 var_restart_pressed=$09FC
 var_note_sequence_number=$09FE
@@ -212,10 +217,6 @@ var_music_rate_cycle=$09FF
 
 ;0A00
 INCLUDE "repton-first-chord-note.asm"
-;0B00
-INCLUDE "repton-second-chord-note.asm"
-;0C00
-INCLUDE "repton-third-chord-note.asm"
 ;0D00
 ; Spare byte?
         EQUB    $00
@@ -403,7 +404,7 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;0D90
 .fn_enable_timer_2
-        ; TODO IS THIS A ONE SHOT TIMER?!?! Assuming it is
+        ; Called everytime there is a VSYNC event (50 times a second, every 20ms)
         ;
         ; Enable Timer 2 on the User VIA
         ; by called the User VIA Interrupt Enable
@@ -456,13 +457,31 @@ INCLUDE "repton-third-chord-note.asm"
         EQUB    $00,$00
 
 .L0DB4
-; TODO
+.fn_play_sound_and_calc_screen_address
+        ; Mish-mash of things here:
+        ; 1. Play sound
+        ; 2. Disable vsync event 
+        ; 3. Calculate Repton's screen address
+        ; 4. Wait for the next vsync event
+        ; 
+        ; Play the music sound for the crunch 
+        ; sound when repton dies - passed in:
+        ; $0000 - required sound channel
+        ; A     - set to the amplitude
+        ; X     - set to the pitch (note)
+        ; Y     - set to the duration
         JSR     fn_play_music_sound
 
+        ; Disable the vsync event as Repton is dead
         JMP     fn_disable_vsync_event_only
 
+        ; Work out the screen write address for Repton's
+        ; current position
+        ;    X will contain the LSB for the screen address
+        ;    Y will contain the MSB for the screen address
         JSR     fn_calc_screen_address_from_x_y_pos
 
+        ; Wait for vsync before continuing
         JMP     fn_wait_for_vertical_sync
 
 ;0DC0
@@ -1069,6 +1088,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; R = ((S + T1H) EOR T1C) + 2 * ((S + T1H) EOR T1C)
         ;
         ; or more simply
+        ; TODO doesn't look at carry flag
         ;
         ; R = 3 * ((S + T1H) EOR T1C)
         ;
@@ -1209,7 +1229,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Logical  colour 1 (0001) 
         ; would be changed to 
         ; pyhsical colour 3 (0011)
-        STA     L0000
+        STA     zp_logical_physical_colour
 
         ; VDU 19, <logical colour>, <physical colour>,0,0,0
         LDA     #$13
@@ -1219,7 +1239,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Top four bits of zeropage location $00 
         ; contains the logical colour to change
         ; Rotate it into the bottom four bits
-        LDA     L0000
+        LDA     zp_logical_physical_colour
         LSR     A
         LSR     A
         LSR     A
@@ -1233,7 +1253,7 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; Only keep the bottom four bits to work out the
         ; physical colour
-        LDA     L0000
+        LDA     zp_logical_physical_colour
         AND     #$0F
         JSR     OSWRCH
 
@@ -1251,7 +1271,7 @@ INCLUDE "repton-third-chord-note.asm"
         ;    X contains the cursor x position 
         ;    Y contains the cursor y position 
         ;
-        ; Screen can be 32 x 32 objects
+        ; Screen can be 8 x 8 objects / 32 x 32 tiles
         ;
         ; On exit:
         ;    X contains the LSB for the screen address
@@ -1776,13 +1796,17 @@ INCLUDE "repton-third-chord-note.asm"
 ;1216
 .fn_print_character_and_increment_xpos
         PHP
+        ; Spare byte - 1
         NOP
+
+        ; Write the character to the screen
         JSR     fn_write_tile_to_screen
 
+        ; Increment the xpos
         JMP     move_to_next_x_pos
-;...
 
-.L121E
+;121E
+.fn_check_if_score_update_or_key
         ; On entry:
         ;    A is not used here - cached until end when restored
         ;    X not required 
@@ -1794,6 +1818,10 @@ INCLUDE "repton-third-chord-note.asm"
         ; 1. Top    left  corner of the square
         ; 2. Botton left corner of the square
         ; 3. Top    right corner of the square
+        ;
+        ; Checks if it needs to add to the score (diamond or earth)
+        ; or if it needs to convert safes into diamonds if repton
+        ; is on a key
         ;
         ; Square of 4 x 4 tiles:
         ; ypos            xpos
@@ -1883,7 +1911,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Check to see if the object is a diamond ($1E) at 
         ; this position, if it isn't then branch ahead
         CMP     #$1E
-        BNE     L127C
+        BNE     check_earth
 
         ; It's a diamond ($1E)
 
@@ -1916,7 +1944,8 @@ INCLUDE "repton-third-chord-note.asm"
         ; Reload the object type from the current 
         ; map memory location
         LDY     #$00
-.L127C
+;127C
+.check_earth
         LDA     (zp_object_or_string_address_lsb),Y
 
         ; Any type of earth scores 1 point
@@ -2084,6 +2113,8 @@ INCLUDE "repton-third-chord-note.asm"
         STA     zp_map_y_for_rock_drop
         LDA     #$1F
         STA     zp_map_x_for_rock_drop
+
+        ; Start
         LDA     #$DF
         STA     zp_object_index_lsb
         LDA     #$07
@@ -2114,11 +2145,8 @@ INCLUDE "repton-third-chord-note.asm"
 
         ; It's a rock or an egg
 
-        ; TODO Check if a rock falls if the safe
-        ; turned into a diamond?
-
         ; Check to see if it's falling
-        JSR     L132A
+        JSR     fn_drop_rock_or_egg
 
 ;1317
 .get_previous_x_object
@@ -2166,8 +2194,8 @@ INCLUDE "repton-third-chord-note.asm"
         ; If it's isn't an empty space below the rock or egg
         ; then branch ahead 
         CMP     #$1F
-        BNE     L13AA
-
+        BNE     fn_check_if_egg_or_rock_can_roll
+        
         ; It's an empty space below the rock or egg
         ; so put a blank in the current rock or egg
         ; position and put the rock or egg in the 
@@ -2355,15 +2383,15 @@ INCLUDE "repton-third-chord-note.asm"
         CMP     #$1C
         BNE     end_drop_rock_or_egg
 
-        ; It's an egg
-
-        JSR     L1558
+        ; It's an egg - crack it!
+        JSR     fn_crack_egg
 
 ;13A9
 .end_drop_rock_or_egg
         RTS          
 
-.L13AA
+;13AA
+.fn_check_if_egg_or_rock_can_roll
         ; Check to see if the rock or egg has
         ; landed on something it can roll off of
         ; and if it has do a left, right or left then
@@ -2410,8 +2438,7 @@ INCLUDE "repton-third-chord-note.asm"
 
 ;13CB
 .check_roll_left_or_right
-        ; Checks first if it can roll left (guess
-        ; that's crueller as it's more likely to kill repton?)
+        ; Checks first if it can roll left 
         JSR     fn_roll_rock_left_and_down
 
         ; Check if it can roll right if it couldn't roll left
@@ -3111,10 +3138,542 @@ INCLUDE "repton-third-chord-note.asm"
         ; Set the nth monster to inactive
         LDX     zp_monster_number
         LDA     #$00
-        STA     var_monster_active,X
+        STA     var_monster_active_status,X
+        RTS
+
+;1558
+.fn_crack_egg
+        LDX     #$00
+;155A
+.check_monster_active
+        ; Find the first empty monster slot (can be 
+        ; a maximum of 4 active monsters). A monster
+        ; is active when $0985 + (n * $06) is set to $01
+        ; where n is the nth monster slot
+        ; but the slot is available for use when it's $00
+        ; Check to see if the current monster
+        ; slot is available ($00)
+        LDA     var_monster_active_status,X
+
+        ; If it's zero then it's available for use
+        BEQ     found_empty_monster_slot
+
+        ; Monster slot in use - move to the 
+        ; next monster (each block of information
+        ; about a monster is +$06 in memory)
+        TXA
+        CLC
+        ADC     #$06
+        TAX
+
+        ; Loop again to check if the next monster slot 
+        ; is available
+        BPL     check_monster_active
+
+;1566
+.found_empty_monster_slot
+        ; Get the monster's position on the 32x32 map
+        ; and work out where the top left corner tile
+        ; will be by multiplying by 4
+        LDA     zp_monster_x
+        ASL     A
+        ASL     A
+
+        ; Store this in $0980 + (n * $06)
+        ; where n is the nth monster slot xpos
+        STA     var_monster_xpos,X
+
+        ; Get the monster's position on the 32x32 map
+        ; and work out where the top left corner tile
+        ; will be by multiplying by 4
+        LDA     zp_monster_y
+        CLC
+
+        ; Add 1 to its y position as it's dropping
+        ; into this final position
+        ADC     #$01
+        ASL     A
+        ASL     A
+
+        ; Store this in $0981 + (n * $06)
+        ; where n is the nth monster slot ypos     
+        STA     var_monster_ypos,X
+
+        ; Reset the counter that times how long to show
+        ; a cracked egg and the monster standing on screen
+        ; to 0
+        LDA     #$00
+        STA     var_monster_wait_counter,X
+
+        ; Mark this monster slot as active and in use
+        ; at $0985 + (n * $06) where n is the nth 
+        ; monster slot active status     '
+        LDA     #$01
+        STA     var_monster_active_status,X
+
+        ; Set the egg in its dropping position
+        ; on the map to be empty $(1F)
+        LDA     #$1F
+
+        ; zp_object_index_lsb/msb is the map position
+        ; calculated before calling this sub-routine
+        ; - indicates where the egg is before it dropped
+        ; to the final location to crack
+
+        ; Add $20 / 32 to get to the next row and the
+        ; eggs final resting position where it'll crack
+        ; and set the space to empty
+        LDY     #$20
+        STA     (zp_object_index_lsb),Y
+        RTS
+
+.L1588
+        ; Set the current monster index to 
+        ; zero as the code will loop through them all
+        LDA     #$00
+        STA     zp_monster_number
+
+;158C
+.loop_check_next_monster
+
+        ; ----------------------------------------------
+        ; Displays the cracked egg for a certain number of loops
+        ; and then the monster standing for the same 
+        ; number of loops before it chases Repton
+        ; ----------------------------------------------
+        ; Get the current monster index
+        LDX     zp_monster_number
+
+        ; Load its active status
+        LDA     var_monster_active_status,X
+
+        ; If the monster is inactive then move
+        ; to the next monster
+        BEQ     check_next_monster
+
+        ; Check to see if the monster is about to
+        ; be crushed by a rock
+        JSR     fn_check_monster_collision
+
+        ; Get the monster wait time
+        LDA     var_monster_wait_counter,X
+        
+        ; If it's negative ($80+) then move
+        ; the monster as he's been standing
+        ; for enough time
+        BMI     fn_move_monster
+
+        ; Add time to the monster wait counter
+        CLC
+        ADC     #$03
+        STA     var_monster_wait_counter,X
+
+        ; If it's been longer than half the time
+        ; ($40/64) then don't draw an egg, draw the
+        ; monster standing
+        CMP     #$40
+
+        ; If egg has been sat there for a while
+        ; branch and draw the monster standing
+        BCS     draw_monster_standing
+
+        ; Draw the cracked egg
+        JSR     fn_draw_cracked_egg
+
+        ; Check the next monster
+        JMP     check_next_monster
+
+;15AB
+.draw_monster_standing
+        ; Draw the monster as standing on the screen
+        ; (if visible)
+        JSR     fn_draw_monster_standing
+
+        ; Check the next monster
+        JMP     check_next_monster
+
+;15B1
+.fn_move_monster
+        ; Moves the monster's top left around randomly
+        ; based on repton's position 
+        ; and  whether it can move left/right or
+        ; up/down 
+        ; (fn_check_monster_movement - works out
+        ; where it can move, randomly)
+
+        ; If the xpos AND 03 isn't zero then jitter 
+        ; and draw the monster (so move left or right first)
+        LDA     var_monster_xpos,X
+        AND     #$03
+        BNE     jitter_and_draw_monster
+
+        ; If the ypos AND 03 isn't zero then jitter 
+        ; and draw the monster (so move up or down second)
+        LDA     var_monster_ypos,X
+        AND     #$03
+        BNE     jitter_and_draw_monster
+
+        ; Calculate the next random movement towards
+        ; Repton
+        JSR     fn_check_monster_movement
+
+;15C2
+.jitter_and_draw_monster
+        ; Load the monster number index into X
+        LDX     zp_monster_number
+
+        ; Blank the monster from the screen
+        LDA     #$00
+        JSR     fn_draw_or_blank_monster
+
+        ; Add jitter to the monster's xpos
+        ; (zero or plus or minus 1)
+        LDA     var_monster_xpos,X
+        CLC
+        ADC     var_monster_xpos_jitter,X
+        STA     var_monster_xpos,X
+
+        ; Add jitter to the monster's ypos
+        ; (zero or plus or minus 1)
+        LDA     var_monster_ypos,X
+        CLC
+        ADC     var_monster_ypos_jitter,X
+        STA     var_monster_ypos,X
+
+        ; Draw the monster on the screen (anything
+        ; non-zero will draw the object)
+        LDA     #$01
+        JSR     fn_draw_or_blank_monster
+
+        ; Check to see if the monster is dead
+        JSR     fn_check_if_monster_dead
+
+;15E5
+.check_next_monster
+        ; There can be up to five monsters on screen
+        ; at any point with the zp_monster_number values:
+        ; $00 - Monster 1
+        ; $06 - Monster 2
+        ; $0C - Monster 3
+        ; $12 - Monster 4
+        ; $18 - Monster 5
+        LDA     zp_monster_number
+        CLC
+        ; Move to the next monster (add 6)
+        ADC     #$06
+        STA     zp_monster_number
+        ; Can only be a maximum of four monsters
+        ; on the screen so end if all have been processed
+        ; otherwise loop back and practice the next one
+        CMP     #$18
+        BNE     loop_check_next_monster
+
+        ; All monsters processed
+        RTS
+
+;15F1
+.fn_check_monster_movement
+
+        ; ------------------------------------------------
+        ; Performs the following:
+        ; 1.  Generates a random number 
+        ; 2.  Checks the lowest bit and performs either 
+        ;     left/right or up/down movement checks
+        ;
+        ; (left/right checks)
+        ; 3a. Checks if monster is in same column as Repton
+        ; 3b. If in same column then do (up/down) checks below
+        ; 3c. If the monster is to the right, check if it can move left
+        ; 3d. If it can then set the x movement counter to -1
+        ; 3e. If the monster is to the left, check if it can move right
+        ; 3f. If it can then set the x movement counter to +1
+        ;
+        ; (up/down checks)
+        ; 4a. Checks if monster is in same row as Repton
+        ; 4b. If the monster is above or in the same row, check if it can move down
+        ; 4c. If it can then set the y movement counter to +1
+        ; 4d. If the monster is below, check if it can move down
+        ; 4e. If it can then set the y movement counter to -1        
+        ;
+        ; Note only works out movement in one direction at a times
+        ;
+        ; On entry:
+        ;    monster info from $0980+
+        ;
+        ; On exit:
+        ;    var_monster_xpos_jitter - contains +1, -1 or 0
+        ;    var_monster_xpos_jitter - contains +1, -1 or 0
+        ;
+        ; ------------------------------------------------
+        ; Reset the x and y jitter for the monster to zero
+        LDA     #$00
+        STA     var_monster_xpos_jitter,X
+        STA     var_monster_ypos_jitter,X
+
+        ; ------------------------------------------------
+        ; (1) Generates a random number 
+        ; ------------------------------------------------
+        ; Generate a random number (returned in A)
+        JSR     fn_generate_random_number
+
+        ; ------------------------------------------------
+        ; (2) Checks the lowest bit and performs either 
+        ;     left/right or up/down movement checks
+        ; ------------------------------------------------
+        ; Check the lowest bit and if it's zero then branch
+        ; So randomly do a move up/down or left/right
+        AND     #$01
+        BEQ     monster_move_down_check
+
+        ; Lowest bit of random number was set
+
+
+        ; ------------------------------------------------
+        ; (3a) Checks if monster is in same column as Repton
+        ; ------------------------------------------------
+        ; Get Repton's top left xpos 
+        ; which is top left xpos + $0E)
+        LDA     zp_visible_screen_top_left_xpos
+        CLC
+        ADC     #$0E
+
+        ; ------------------------------------------------
+        ; (3b) If in same column then do (up/down) checks instead
+        ; ------------------------------------------------
+        ; Check to see if the Monster's top left xpos
+        ;  is in the same column as Repton
+        CMP     zp_monster_xpos,X
+
+        ; Branch if in the same column
+        BEQ     monster_move_down_check
+
+        ; Branch if to the left of Repton
+        BCS     monster_move_right_check
+
+        ; Monster is to the right of Repton
+
+        ; ------------------------------------------------
+        ; (3c) Check if the monster can move left towards Repton
+        ; ------------------------------------------------
+        ; Convert ypos into 32x32 map position by dividing
+        ; by 4 and store in Y
+        LDA     zp_monster_ypos,X
+        LSR     A
+        LSR     A
+        TAY
+
+        ; Subtract 1 from the monster's position 
+        ; to see what's to the left of it and 
+        ; if it can move there
+        LDA     zp_monster_xpos,X
+        SEC
+
+        ; Subtract 1 from the Monster's xpos
+        SBC     #$01
+
+        ; Convert xpos into 32x32 map position by dividing
+        ; by 4 and store in X
+        LSR     A
+        LSR     A
+        TAX
+
+        ; Find out what object is at this position on the
+        ; screen
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; If the object is empty space ($1F) then the monster
+        ; can move there, if not it cannot
+        CMP     #$1F
+
+        ; If it's not empty space then branch 
+        ; (monster cannot more there)
+        BNE     end_monster_move_left_check
+
+        ; Monster can move into the space
+
+        ; ------------------------------------------------
+        ; (3d) If it can set x movement counter to -1
+        ; ------------------------------------------------
+
+        ; Set the monster movement to -1 as the monster
+        ; can move left towards repton
+        LDX     zp_monster_number
+        LDA     #$FF
+        STA     var_monster_xpos_jitter,X
+;1629
+.end_monster_move_left_check
+        RTS
+
+;162A
+.monster_move_right_check
+        ; ------------------------------------------------
+        ; (3e) Check if the monster can move right towards Repton
+        ; ------------------------------------------------
+
+        ; Convert ypos into 32x32 map position by dividing
+        ; by 4 and store in Y
+        LDA     var_monster_ypos,X
+        LSR     A
+        LSR     A
+        TAY
+
+        ; Add 4 to see what's to the right of the monster
+        LDA     var_monster_xpos,X
+        CLC
+        ADC     #$04
+
+        ; Convert xpos into 32x32 map position by dividing
+        ; by 4 and store in X        
+        LSR     A
+        LSR     A
+        TAX
+
+        ; Find out what object is at this position on the
+        ; screen (to the right of the monster)
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; If the object is empty space then the monster
+        ; can move there, if not it cannot
+        CMP     #$1F
+        BNE     end_monster_move_right_check
+
+        ; Monster can move into the space
+
+        ; ------------------------------------------------
+        ; (3f) If it can set x movement counter to +1
+        ; ------------------------------------------------
+
+        ; Set the monster movement to +1 as the monster
+        ; can move right towards repton
+        LDX     zp_monster_number
+        LDA     #$01
+        STA     var_monster_xpos_jitter,X
+;1647
+.end_monster_move_right_check
+        RTS
+
+
+;1648
+.monster_move_down_check
+
+        ; Get Repton's top left xpos 
+        ; which is top left xpos + $0E)
+        LDA     zp_visible_screen_top_left_ypos
+        CLC
+        ADC     #$0E
+
+        ; ------------------------------------------------
+        ; (4a) Checks if monster is in same row as Repton        
+        ; ------------------------------------------------
+        ; Check to see if the Monster's top left ypos
+        ; is in the same row as Repton
+        CMP     zp_monster_ypos,X
+
+        ; Branch if monster is below repton
+        BCC     monster_move_up_check
+
+        ; Monster is above or on the same row as repton
+
+        ; ------------------------------------------------
+        ; (4b) Check if the monster can move down towards Repton
+        ; ------------------------------------------------        
+
+        ; Add 4 to the monster ypos so the object in the 
+        ; next row down the screen can be checked to see
+        ; if the monster can move there
+        LDA     zp_monster_ypos,X
+        CLC
+        ADC     #$04
+
+        ; Convert ypos into 32x32 map position by dividing
+        ; by 4 and store in Y
+        LSR     A
+        LSR     A
+        TAY
+
+        ; Convert xpos into 32x32 map position by dividing
+        ; by 4 and store in X        
+        LDA     zp_monster_xpos,X
+        LSR     A
+        LSR     A
+        TAX
+
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; Find out what object is at this position on the
+        ; screen
+        CMP     #$1F
+
+        ; If the object is empty space ($1F) then the monster
+        ; can move there, if not it cannot        
+        BNE     end_monster_move_down_check
+
+        ; Monster can move into that space
+
+        ; ------------------------------------------------
+        ; (4c) If it can then set the y movement counter to +1
+        ; ------------------------------------------------
+
+        ; Set the monster movement to +1 as the monster
+        ; can move down towards repton
+        LDX     zp_monster_number
+        LDA     #$01
+        STA     var_monster_ypos_jitter,X
+;166F
+.end_monster_move_down_check
+        RTS
+
+;1670
+.monster_move_up_check
+        ; ------------------------------------------------
+        ; (4d) Check if the monster can move up towards Repton
+        ; ------------------------------------------------
+        LDA     zp_monster_ypos,X
+        SEC
+
+        ; Subtract 1 from the Monster's ypos
+        SBC     #$01
+
+        ; Convert ypos into 32x32 map position by dividing
+        ; by 4 and store in X
+        LSR     A
+        LSR     A
+        TAY
+
+        ; Convert xpos into 32x32 map position by dividing
+        ; by 4 and store in X
+        LDA     zp_monster_xpos,X
+        LSR     A
+        LSR     A
+        TAX
+
+        ; Find out what object is at this position on the
+        ; screen
+        JSR     fn_lookup_screen_object_for_x_y
+
+        ; If the object is empty space ($1F) then the monster
+        ; can move there, if not it cannot
+        CMP     #$1F
+
+        ; If it's not empty space then branch 
+        ; (monster cannot more there)
+        BNE     end_monster_move_up_check
+
+        ; Monster can move into the space
+
+        ; ------------------------------------------------
+        ; (4e) If it can then set the y movement counter to +1
+        ; ------------------------------------------------
+
+        ; Set the monster movement to -1 as the monster
+        ; can move up towards repton
+        LDX     zp_monster_number
+        LDA     #$FF
+        STA     var_monster_ypos_jitter,X
+;168D
+.end_monster_move_up_check
         RTS        
-; TODO TWO PAGES
-;...
+
 ;168E
 .fn_draw_or_blank_monster
         ; On entry:
@@ -3166,7 +3725,8 @@ INCLUDE "repton-third-chord-note.asm"
         LDX     zp_monster_number
         RTS
 
-.L16AE
+;16AE
+.fn_draw_cracked_egg
         ; Cracked egg
         ; 1. Set the source sprite to be the cracked egg
         ; 2. Get the nth monster's (xpos, ypos) on the 128x128 map
@@ -3198,7 +3758,8 @@ INCLUDE "repton-third-chord-note.asm"
         LDX     zp_monster_number
         RTS
 
-.L16C8
+;16C8
+.fn_draw_monster_standing
         ; 1. Set the source sprite to be the monster standing
         ; 2. Get the nth monster's (xpos, ypos) on the 128x128 map
         ; 3. Draw the monster standing
@@ -3213,6 +3774,7 @@ INCLUDE "repton-third-chord-note.asm"
         ; Get the nth monster's xpos and ypos
         ; on the 128x128 map grid - nth is passed in X
         LDY     var_monster_ypos,X
+
         ; Why not use LDX and free a byte?
         LDA     var_monster_xpos,X
         TAX
@@ -3307,10 +3869,10 @@ INCLUDE "repton-third-chord-note.asm"
         LDA     #$F1
         LDX     #$06
         LDY     #$02
-        JSR     L0DB4
+        JSR     fn_play_sound_and_calc_screen_address
 
-        ; Display the explosion on the screen
-        ; for 120 ms
+
+        ; Wait 120 ms before showing the explosion
         JSR     fn_wait_120ms
 
         ; Display a small explosion on the screen
@@ -4381,12 +4943,12 @@ INCLUDE "repton-third-chord-note.asm"
         ; this is done by subtracting Y from $24 - for rocks
         ; and eggs this will always be 2 but for jittery
         ; monsters could be 0-3
-        STX     zp_temp_calc
+        STX     zp_temp_x_calc
 
         ; Subtract X from $24       
         LDA     #$24
         SEC
-        SBC     zp_target_screen_address_lsb
+        SBC     zp_temp_x_calc
         STA     zp_object_width_default_counter
 
 ;1A50
@@ -7268,16 +7830,25 @@ INCLUDE "repton-third-chord-note.asm"
         ; it's cached and restored at the end
         ; Spare bytes - 2 
         LDA     #$FF
-        JSR     L121E
+
+        ; Check if Repton has picked up 
+        ; a diamond or earth or a key
+        JSR     fn_check_if_score_update_or_key
 
         ; A is not used here in this sub-routine either
+
+        ; Check if Repton has picked up 
+        ; a diamond or earth or a key
         JSR     L12F6
 
         ; Setting A does nothing in the next sub-routine
         ; it's cached and restored at the end
         ; Spare bytes - 2 
         LDA     #$1F
-        JSR     L121E
+
+        ; Check if Repton has picked up 
+        ; a diamond or earth or a key
+        JSR     fn_check_if_score_update_or_key
 
         ; Spare byte - 1
         NOP
