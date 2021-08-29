@@ -131,12 +131,12 @@ zp_object_index_lsb=$0072
 zp_map_object_update_msb=$0072
 zp_map_xpos_for_safe_change=$0072
 
-zp_repton_xpos=$0073
+zp_repton_xpos=$0072
 zp_random_byte_source_lsb=$0073
 zp_object_index_msb=$0073
 zp_map_ypos_for_safe_change=$0073
 
-zp_repton_ypos=$0074
+zp_repton_ypos=$0073
 zp_random_byte_source_msb=$0074
 zp_object_index_lsb_cache=$0074
 zp_cached_object_id_for_rock_drop=$0074
@@ -820,7 +820,7 @@ INCLUDE "repton-main-music.asm"
 
 ; 0EE3
 .text_by_superior_software
-        EQUS    "By, Superior Software",$0D
+        EQUS    "By",$82," Superior Software",$0D
 ;0EF9
 .text_score
         EQUS    $83,"Score :",$0D
@@ -1164,7 +1164,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Store the amplitude in the
         ; sound parameter block
-        STA     zp_sound_block_channel_msb 
+        STA     zp_sound_block_amplitude_lsb
 
         ; Store the pitch (note) in the
         ; sound parameter block
@@ -2117,7 +2117,8 @@ INCLUDE "repton-main-music.asm"
         ; Move to the previous object on the row
         ; and loop if the start of the row hasn't 
         ; been reached
-        DEC     zp_map_ypos_for_safe_change
+        ; 73 (wrong) vs 77
+        DEC     zp_map_x_for_safe_change
         BPL     start_previous_column
 
         ; Move to the previous row
@@ -3135,9 +3136,9 @@ INCLUDE "repton-main-music.asm"
         ; Set the source graphic to be a rock (the 
         ; first data tile)
         LDA     #HI(data_tiles)
-        STA     zp_source_tile_lsb
-        LDA     #LO(data_tiles)
         STA     zp_source_tile_msb
+        LDA     #LO(data_tiles)
+        STA     zp_source_tile_lsb
 
         ; Convert X into 128x128 by multipying
         ; by 4 and store in X
@@ -4065,7 +4066,7 @@ INCLUDE "repton-main-music.asm"
         ; Write the string
         JSR     fn_write_string_to_screen
 
-;17A8
+;17A8g
 .fn_set_press_escape_lsb
         ; Set the LSB for the "Press escape to
         ; kill yourself" string
@@ -5223,7 +5224,7 @@ INCLUDE "repton-main-music.asm"
 .loop_blank_object_next_row
         ; Reset the number of horizontal tiles to blank in the
         ; working counter (it gets decremented)
-        LDA     zp_object_height_default_counter
+        LDA     zp_object_width_default_counter
         STA     zp_object_width_working_counter
         LDY     #$00
 ;1AF3
@@ -5295,7 +5296,7 @@ INCLUDE "repton-main-music.asm"
 ;1B1D
 .check_if_all_rows_blanked
         ; Move onto the next sprite row
-        DEC     zp_object_width_working_counter
+        DEC     zp_object_height_working_counter
         BNE     loop_blank_object_next_row
 
         ; Return
@@ -5674,7 +5675,7 @@ INCLUDE "repton-main-music.asm"
         ; Load the object for this (x,y) from
         ; the current screen cache that starts at $0400
         LDY     #$00
-        LDA     (zp_object_or_string_address_msb),Y
+        LDA     (zp_object_or_string_address_lsb),Y
 
         ; Reset the X and Y registers 
         ; NOTE pushing then pulling A onto the
@@ -6862,7 +6863,7 @@ INCLUDE "repton-main-music.asm"
         ; Cache X and Y as they are required later
         ; and are not changed
         STX     zp_object_index_lsb_cache
-        STY     zp_object_index_lsb_cache
+        STY     zp_object_index_msb_cache
 
         ; Reset nth object identifier - this will
         ; contain the object code at the nth position
@@ -7293,7 +7294,8 @@ INCLUDE "repton-main-music.asm"
         STA     zp_dissolve_screen_write_address_lsb
         LDA     #$60
         STA     zp_dissolve_screen_write_address_msb
-.L1F8E
+;1F8E
+.loop_generate_random_number
         ; Get a random number
         JSR     fn_generate_random_number
 
@@ -7312,7 +7314,7 @@ INCLUDE "repton-main-music.asm"
         STA     zp_random_byte_source_msb
 
         ; Generate another random number for the LSB
-        ; address which will be either $E0xx or 
+        ; address which will be either $E0xx or TODO
         JSR     fn_generate_random_number
 
         STA     zp_random_byte_source_lsb
@@ -7336,8 +7338,8 @@ INCLUDE "repton-main-music.asm"
         BNE     loop_dissolve_screen_byte
 
         ; Move to the next page of memory
-        INC     zp_screen_write_address_msb
-        BPL     loop_dissolve_screen_byte
+        INC     zp_dissolve_screen_write_address_msb
+        BPL     loop_generate_random_number
 
         ; Loop over the whole screen N times
         DEC     zp_dissolve_screen_iterations
@@ -8543,10 +8545,20 @@ INCLUDE "repton-music-intro-notes.asm"
         ; flip the scores
         BCC     flip_score_lookup_positions
 
-        ;----------------------------------------
-        ; NOTE - Weird - middle byte not checked?
-        ; TODO - bug?
-        ;----------------------------------------
+        ; If the MSBs are not the same
+        BNE     no_flip_score_lookup_positions
+
+        ; Compare if the MLSB for (n) < (n+1)th
+        ; then flip their positions in the lookup
+        ; table
+        ; X - (n)  th entry in high score table
+        ; Y - (n+1)th  entry in high score table
+        LDA     data_high_scores+1,X
+        CMP     data_high_scores+1,Y
+
+        ; If first score < second score MLSB
+        ; flip the scores
+        BCC     flip_score_lookup_positions        
 
         ; If the LSBs are not the same
         BNE     no_flip_score_lookup_positions
@@ -8672,7 +8684,10 @@ INCLUDE "repton-music-intro-notes.asm"
         CMP     #$08
         BNE     display_next_high_score_name
 
-        RTS          
+        RTS
+
+        ; Spare bytes -1 
+        EQUB    $00
 
 ;2450
 .text_screen_complete_press_space
@@ -9596,7 +9611,7 @@ INCLUDE "repton-has-been-finished.asm"
         EQUB    $0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D
         EQUB    $0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D
         EQUB    $0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D
-        EQUB    $0D,$0D,$0D,$0D,$0D
+        EQUB    $0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D
 
 ;2C00
 .fn_loop_wait_for_space_bar_on_screen
@@ -9770,7 +9785,7 @@ INCLUDE "repton-has-been-finished.asm"
         CLC
         ADC     #$41
         ; Write the screen letter afer "Screen "
-        JSR     fn_write_string_to_screen
+        JSR     fn_print_character_to_screen
 
         ; Set the player started on screen to this screen
         LDA     var_screen_number
@@ -9786,13 +9801,15 @@ INCLUDE "repton-has-been-finished.asm"
         EQUS    $81,"Press ",$82,"SPACE BAR ",$81,"to play",$0D
 ;2CB6
 .text_p_to_enter_password
-        EQUS    $81,"Press",$82,"P ",$81,"to enter password",$0D
+        EQUS    $81,"Press ",$82,"P ",$81,"to enter password",$0D
+
 ;2CD3
 .text_r_to_restart 
+
         EQUS    $81,"Press ",$82,"R ",$81,"to restart    ",$0D,$0D,$0D,$0D
 ;2cf0
 .text_enter_password
-        EQUS    $81,"Enter password:",$0D
+        EQUS    "Enter password:",$0D
 ;2d00
 .text_congrats_enter_name
         EQUS    "Congratulations. ",$83,"Enter your name",$0D
@@ -9885,7 +9902,9 @@ INCLUDE "repton-has-been-finished.asm"
         JSR     fn_write_string_to_screen
         JMP     fn_check_for_map_key_press
 
-
+        ; Spare bytes - 6
+        ; Note - Assume the first two are old code bit 
+        EQUB    $61,$36,$00,$00,$00,$00
 ;2E00
 .fn_get_player_password_or_name
         ; Set the entered password length to zero
@@ -10150,7 +10169,7 @@ INCLUDE "repton-has-been-finished.asm"
         LDX     var_screen_number
         LDA     data_password_lsb_lookup_table,X
         STA     zp_object_or_string_address_lsb
-        LDA     #LO(text_password_screen_a)
+        LDA     #HI(text_password_screen_a)
         STA     zp_object_or_string_address_msb
 
         ; Set the cursor position to (19,26)
@@ -10160,7 +10179,10 @@ INCLUDE "repton-has-been-finished.asm"
 
         ; Display the password
         JMP     fn_write_password_to_screen       
-;...
+
+        ; Spare bytes - 2
+        EQUB    $00,$00
+
 ;2EE0
 .text_on
         EQUS    "On ",$0D
