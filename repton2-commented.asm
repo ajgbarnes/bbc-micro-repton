@@ -1,15 +1,34 @@
+; Disassembly and annotation of Repton by Superior Software
+; 
+; Originally written by Timothy Tyler (c) Copyright 1985
+;
+; Disassembly labels and comments by Andy Barnes (c) Copyright 2021
+;
+; Twitter @ajgbarnes
 org &0A00
 
-; Interrupt-request vector 2 (IRQ2V)
-IRQ2V_LSB = $0206
-IRQ2V_MSB = $0207
+; Notes on the game
+; =================
+;
+; Code
+; ----
+; - Relocation code is from fn_start_point ($5DE1) onwards (all thrown away when game starts)
+; - Main game entry code is at fn_game_start ($0BF8)
+; - Main game loop is at main_game_loop ($0D16)
+; - Seems well structured and through through
+; - No overloadng of zero page locations (used for single purposes)
+
+
 
 ; Read character (from keyboard) to A
 OSRDCH = $FFE0 
+
 ; Write character (to screen) from A
 OSWRCH = $FFEE
+
 ; Perfrom miscellaneous OS operation using control block to pass parameters
 OSWORD = $FFF1
+
 ; Perfrom miscellaneous OS operation using registers to pass parameters
 OSBYTE = $FFF4
 
@@ -32,156 +51,184 @@ SHEILA_USER_VIA_R9_T2C_H = $FE69
 ; Sheila User VIA Interrupt Enable Register
 SHEILA_USER_VIA_R14_IER = $FE6E
 
-
+; Interrupt-request vector 2 (IRQ2V)
+IRQ2V_LSB = $0206
+IRQ2V_MSB = $0207
 
 ; OS Workspace 
+OS_ZP_INTERRUPT_A_STORAGE=$00FC
 OS_WS_SCREEN_SIZE_PAGES=$0354
 OS_WS_MSB_OF_HIMEM=$034E
 OS_WS_NO_BYTES_PER_ROW_LSB=$0352
 OS_WS_NO_BYTES_PER_ROW_MSB=$0353
 OS_WS_SIZE_OF_SCREEN_MEMORY=$0353
 OS_WS_CURRENT_MODE=$0355
-WRCHV_LSB = $020E
-WRCHV_MSB = $020F
-IND1V_LSB =$0230
-IND1V_MSB =$0231
-FSCV_LSB = $021E
-
 
 zp_logical_physical_colour=$0000
 zp_screen_write_address_lsb = $0000
 zp_source_tile_lsb=$0000
 zp_map_x_cache=$0000
 zp_screen_start_address_lsb_div8=$0000
+zp_required_sound_channel=$0000
+
 zp_screen_start_address_msb_div8=$0001
 zp_screen_write_address_msb = $0001
 zp_source_tile_msb=$0001
+zp_sound_block_channel_lsb=$0001
+
 zp_tile_load_address_lsb = $0002
 zp_target_screen_address_lsb=$0002
 zp_temp_x_calc=$0002
+zp_sound_block_channel_msb=$0002
+
 zp_temp_y_calc=$0003
 zp_tile_load_address_msb = $0003
 zp_target_screen_address_msb=$0003
+zp_sound_block_amplitude_lsb=$0003
+
 zp_sprite_parts_to_copy_or_blank = $0004
 zp_object_width_default_counter=$0004
+zp_sound_block_amplitude_msb=$0004
+
 zp_object_height_default_counter=$0005
+zp_sound_block_pitch_lsb=$0005
+
 zp_tile_x_pos_cache=$0006
 zp_object_width_working_counter=$0006
+zp_sound_block_pitch_msb=$0006
+
 zp_tile_y_pos_cache=$0007
 zp_object_height_working_counter=$0007
-zp_general_xpos_lookup_calcs=$0008
-zp_general_ypos_lookup_calcs=$0009
-zp_object_or_string_address_lsb = $000A
-zp_object_or_string_address_msb = $000B
-zp_object_or_string_address_lsb_cache = $000C
-zp_object_or_string_address_msb_cache = $000D
-
-zp_required_sound_channel=$0000
-zp_sound_block_channel_lsb=$0001
-zp_sound_block_channel_msb=$0002
-zp_sound_block_amplitude_lsb=$0003
-zp_sound_block_amplitude_msb=$0004
-zp_sound_block_pitch_lsb=$0005
-zp_sound_block_pitch_msb=$0006
 zp_sound_block_duration_lsb=$0007
+
+zp_general_xpos_lookup_calcs=$0008
 zp_sound_block_duration_msb=$0008
 
+zp_general_ypos_lookup_calcs=$0009
+
+zp_object_or_string_address_lsb = $000A
+
+zp_object_or_string_address_msb = $000B
+
+zp_object_or_string_address_lsb_cache = $000C
+
+zp_object_or_string_address_msb_cache = $000D
+
 zp_game_screen_column_to_draw = $000E
+
 zp_print_zero_or_not_flag =$000F
 zp_game_screen_row_to_draw = $000F
+
 zp_display_value_msb = $0010
 zp_new_tile_xpos=$0010
+
 zp_display_value_mlsb = $0011
 zp_new_tile_ypos=$0011
+
 zp_display_value_lsb = $0012
 zp_visible_screen_top_left_xpos_cache = $0012
+
 zp_visible_screen_top_left_ypos_cache = $0013
 
 zp_masked_password_character=$003F
 
 zp_music_block_channel_lsb=$0060
+
 zp_music_block_channel_msb=$0061
+
 zp_music_block_amplitude_lsb=$0062
+
 zp_music_block_amplitude_msb=$0063
+
 zp_music_block_pitch_lsb=$0064
+
 zp_music_block_pitch_msb=$0065
+
 zp_music_block_duration_lsb=$0066
+
 zp_music_block_duration_msb=$0067
 
 zp_password_character_count = $006A
+
 zp_password_current_character_cache = $006B
-; Dual function zp address
+
 zp_dissolve_screen_write_address_lsb=$0070
 zp_screen_password_lookup_lsb=$0070
 zp_starting_bit_offset_lsb_cache=$0070
 zp_cached_object_id=$0070
 zp_map_x_for_rock_drop=$0070
 zp_monster_x=$0070
-; Dual function zp address
+
 zp_dissolve_screen_write_address_msb=$0071
 zp_monster_y=$0071
 zp_screen_password_lookup_msb=$0071
 zp_starting_bit_offset_msb_cache=$0071
 zp_map_object_update_lsb=$0071
 zp_map_y_for_rock_drop=$0071
-; Dual function zp address
+
 zp_dissolve_screen_iterations=$0072
 zp_screen_password_lookup_index=$0072
 zp_object_index_lsb=$0072
 zp_map_object_update_msb=$0072
 zp_map_xpos_for_safe_change=$0072
-
 zp_repton_xpos=$0072
+
 zp_random_byte_source_lsb=$0073
 zp_object_index_msb=$0073
 zp_map_ypos_for_safe_change=$0073
-
 zp_repton_ypos=$0073
+
 zp_random_byte_source_msb=$0074
 zp_object_index_lsb_cache=$0074
 zp_cached_object_id_for_rock_drop=$0074
-
 zp_object_x_parts_for_safe_change=$0074
-zp_object_y_parts_for_safe_change=$0075
 
+zp_object_y_parts_for_safe_change=$0075
 zp_object_index_msb_cache=$0075
 
 zp_object_id=$0076
 zp_map_x = $0076
 zp_left_object_index_lsb=$0076
+
 zp_left_object_index_msb=$0077
 zp_nth_object_index_lsb=$0077
 zp_map_y = $0077
 zp_map_x_for_safe_change=$0077
-zp_map_y_for_safe_change=$0078
 
+zp_map_y_for_safe_change=$0078
 zp_nth_object_index_msb=$0078
 zp_cached_object_id_for_rock_drop_r_or_l=$0078
 
 zp_current_map_cache_lsb=$0079
 zp_decode_map_counter_lsb=$0079
+
 zp_current_map_cache_msb=$007A
 zp_decode_map_counter_msb=$007A
 
 zp_visible_screen_top_left_xpos_cache2=$007C
+
 zp_visible_screen_top_left_ypos_cache2=$007D
 
-
 zp_string_to_display_current_byte = $007E
+
 zp_screen_write_total_byte_counter = $007F
 zp_sound_note_index=$007F
 zp_monster_number=$007F
 
 zp_password_cursor_xpos = $0080
+
 zp_password_cursor_ypos = $0081
+
 zp_screen_colour_mask= $0082
+
 ; Actually screen start xpos
 zp_visible_screen_top_left_xpos=$008C
-zp_visible_screen_top_left_ypos=$008D
-zp_screen_start_address_lsb = $008E
-zp_screen_start_address_msb = $008F
 
-OS_ZP_INTERRUPT_A_STORAGE=$00FC
+zp_visible_screen_top_left_ypos=$008D
+
+zp_screen_start_address_lsb = $008E
+
+zp_screen_start_address_msb = $008F
 
 eventv_lsb_vector = $0220
 eventv_msb_vector = $0221
@@ -205,6 +252,7 @@ var_high_score_mlsb=$090F
 var_high_score_msb=$0910
 var_sound_status = $0911
 var_music_status = $0912
+
 ; Indicates the both sound and music are on
 var_both_sound_and_music_on_status = $0913
 var_player_started_on_screen_x = $0914
@@ -248,28 +296,34 @@ INCLUDE "repton-main-music.asm"
         TAX
 
         ; Disable User VIA Timer 2
-        ; Seems to act as a JSR as the fn ends 
-        ; with an RTI
+        ; Called sub-routine ends with an RTI
         JMP     fn_disable_timer_2
+
 ;0D08
 .fn_event_handler_IRQ2V
         ; This is the IRQ2V event handler routine
-        ; when Timer 2 fires
+        ; when Timer 2 fires - pointed at by IRQ2V
 
         ; This plays the music for the game and
         ; plays 3 notes in rapid succession on 
         ; Channel 1 to give a pseudo chord effect
 
+        ; This is NOT used to play the intro music
+        ; when a new game starts
+
         ; First  note is stored $0A00-$0AFF
         ; Second note is stored $0B00-$0BFF
         ; Third  note is stored $0C00-$0CFF
+
+        ; Note - second note is ALWAYS the same as the 
+        ; first so this could have freed up 256 bytes
 
         ; All parameters are the same other than the
         ; pitch i.e. channel, amplitude, volume
 
         ; Preserve A, X and Y and on the stack
-        ; as we're an interrupt (will get restored)
-        ; before returning
+        ; as this is processing an interrupt 
+        ; (will get restored before returning)
         TXA
         PHA
         TYA
@@ -277,7 +331,8 @@ INCLUDE "repton-main-music.asm"
 
         ; Limit the rate at which the notes are played
         ; only play every 8th time this is called - this is
-        ; achieved by ANDing with 7 / 0000 0111
+        ; achieved by ANDing with 7 / 0000 0111 so will only
+        ; play when the result is zero
         INC     var_music_rate_cycle
         LDA     var_music_rate_cycle
         AND     #$07
@@ -285,8 +340,10 @@ INCLUDE "repton-main-music.asm"
 
         ; Get the next note sequence number to play
         INC     var_note_sequence_number
-        ; Set to channel 1 and flush the sound channel
-        ; if a note is already playing
+
+        ; Set initial channel to channel 1 ($x1)and 
+        ; flush the sound channel ($1x) if a note is 
+        ; already playing
         LDA     #$11
         STA     zp_music_block_channel_lsb
 
@@ -315,6 +372,12 @@ INCLUDE "repton-main-music.asm"
 
 ;0D3B
 .fn_set_sound_block_and_play_sound
+        ; Called by the IRQ2V event handler above
+        ; and used to play the in-game music only
+        ; Assumes the LSBs (other than pitch) in the
+        ; sound block have been set, sets the pitch
+        ; LSB to whatver is in A and zeros the MSBs
+
         ; Set the pitch to the value passed in A
         STA     zp_music_block_pitch_lsb
         LDA     #$00
@@ -326,6 +389,7 @@ INCLUDE "repton-main-music.asm"
         STA     zp_music_block_duration_msb
 
         ; Set the amplitude and duration to 1
+        ; Setting amplitude to 1 means use Envelope 1
         LDA     #$01
         STA     zp_music_block_amplitude_lsb
         STA     zp_music_block_duration_lsb
@@ -334,6 +398,8 @@ INCLUDE "repton-main-music.asm"
         ; Set XY and call fn to play the sound
         LDX     #$60
         LDY     #$00
+
+        ; Play the sound and return
         JMP     fn_play_game_sound
 
         ; Spare bytes
@@ -421,7 +487,8 @@ INCLUDE "repton-main-music.asm"
 
 ;0D90
 .fn_enable_timer_2
-        ; Called everytime there is a VSYNC event (50 times a second, every 20ms)
+        ; Called everytime there is a VSYNC event 
+        ; (50 times a second, every 20ms)
         ;
         ; Enable Timer 2 on the User VIA
         ; by called the User VIA Interrupt Enable
@@ -468,7 +535,7 @@ INCLUDE "repton-main-music.asm"
         LDA     #$20
         STA     SHEILA_USER_VIA_R14_IER
 
-        ; Restore the accumulator
+        ; Restore the accumulator's old value
         LDA     OS_ZP_INTERRUPT_A_STORAGE
         RTI        
 
@@ -705,7 +772,7 @@ INCLUDE "repton-main-music.asm"
 
 ;0E46
 .envelope_1
-        ; OSWORD &08 / ENVELOPE Paramter block
+        ; OSWORD &08 / ENVELOPE Parameter block
         ; ENVELOPE 1,2,0,0,0,1,2,3,100,1,255,254,126,126
         ; https://central.kaserver5.org/Kasoft/Typeset/BBC/Ch30.html
         EQUB    $01,$02,$00,$00,$00,$01,$02,$03

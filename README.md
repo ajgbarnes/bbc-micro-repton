@@ -14,7 +14,9 @@ Status
 - Script written to take extracted REPTON2 and EOR with $FF to decode
 - REPTON2 mostly commented - need to walk through again (slowly)
 - REPTON2 compiles to be byte identical to the original (before EOR with $FF)
-- Need to write routine that will EOR with $FF
+- REPTON2 converts to be byte identical to the original (after EOR with $FF)
+
+At the moment, REPTON1 and REPTON2 have to be manually added to the template image (repton.ssd)
 
 # Disassembly
 
