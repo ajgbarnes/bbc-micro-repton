@@ -113,7 +113,7 @@
 
 org     $2F00
 
-; Write character (to screen) from A
+; Write character (to screen) from A - OSWRCH uses VDU values
 OSWRCH = $FFEE
 ; Perfrom miscellaneous OS operation using control block to pass parameters
 OSWORD = $FFF1
@@ -782,8 +782,8 @@ INCLUDE "graphics-load-screen.asm"
         ; Source is set to $1D00
         ; Target is set to $0A00
         ;
-        ; Relocates the game code from $1D00-$7300 
-        ; ($5600 bytes) to $0A00 to $6000
+        ; Relocates the game code from $1D00-$72FF
+        ; ($5600 bytes) to $0A00 to $5FFF
 
         LDA     #$00
         STA     zp_code_source_lsb

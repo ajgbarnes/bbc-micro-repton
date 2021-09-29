@@ -10,20 +10,589 @@ org &0A00
 ; Notes on the game
 ; =================
 ;
+; Memory Relocation
+; -----------------
+; - Relocation code is sourced from REPTON1 which puts the code in $0700 
+; - REPTON1 then runs REPTON2 with an execution address of $0700
+; - Hence when REPTON2 loads, the relocation routine is called at $0700
+; - REPTON2 loads at $1D00 and is moved down $1300 bytes 
+; - It is moved from $1D00-$72FF to $0A00-$5FFF
+;
+; Code obfuscation
+; ----------------
+; - Code is EOR'd with $FF on disc/tape
+; - When the relocation routine runs, it reverses this by EORing with $FF
+;
 ; Code
 ; ----
-; - Relocation code is from fn_start_point ($5DE1) onwards (all thrown away when game starts)
-; - Main game entry code is at fn_game_start ($0BF8)
-; - Main game loop is at main_game_loop ($0D16)
-; - Seems well structured and through through
-; - No overloadng of zero page locations (used for single purposes)
+; - Main game entry point is at fn_game_start ($2640)
+; - Main game entry point is called by the memory relocation code above once complete
+; - Escape is disabled and break clears memory (*FX 200,3) in REPTON1
+; - Many zero page locations are overloaded (used for multiple things)
+;   not an issue, just have to be aware when debugging / stopping the code
+; - Variables are either in zero page or $09xx
+; - There are many spare bytes (probably enough for another level) and small
+;   fragments of unused code - assume the author wanted to maintain the 
+;   memory locations hence NOP'd bits of redundant code.  Can also be 
+;   seen when bits of a function are placed in anther "inbetween" subroutine
+;   instead of in the main fn and then call the final subroutine direct
+;   (oh to have modern tools back in the day)
+;
+; Bugs?
+; -----
+; - Sound channel never set correctly for monster crush sound
+;   works by luck only - see fn_kill_monster
+; - After Repton dies, and the explosions have animated there is a
+;   half second wait and it then tries to play a sound but the first two parameters
+;   aren't set properly so no sound every comes out i.e. 
+;   SOUND &E0, 31, 4,2 - see fn_kill_repton This could have beena late development
+;   change to stop the sound?
+; - Music will not play if Sound is off - music only plays if both sound and music are on
+;   (why not independent?)
+; - $151B should be STY not LDY - doesn't seem to break anything
+; - Monster information slots start at $0980 (OK) but the piece of code
+;   that resets the monster cache starts at $0970 and clears up to $09EF
+; - None of the above affets the great game experience thankfully
+;
+; Game Sounds
+; -----------
+; - Single envelope used defined at envelope_1
+;   ENVELOPE 1,2,0,0,0,1,2,3,100,1,255,254,126,126
+; - Monster crush sound (SOUND &60,1,1,1 or SOUND &92,1,1,1)
+; - Diamond sound (SOUND &13,1,200,1)
+; - Rock/egg dropping (SOUND &10,Amplitude,4,2)
+;   Amplitude calculated as Amplitude = ((rock or egg y) / 4) - 15
+; - Repton crunch sound (SOUND &10,-15,6,2)
+; - Almost out of time sound (SOUND $10, -15, 10, 1)
+;
+; Score
+; -----
+; - Stored as binary coded decimal
+; - A diamond is 50 points
+; - A piece of Earth is 1 point
+; - Repton is always placed on a piece of earth at the start to 
+;   automatically get 1 point - this is used along with remaining
+;   lives / time to see if a game has started when e.g. displaying
+;   the start screen
+;
+; New Game Intro Music
+; --------------------
+; - Plays a sequence of 52 notes (see repton-music-intro-notes.asm)
+; - Code and storage could play up to 64 but code stops at 52nd
+; - Code that restricts the notes is at $2217
+; - Music is across Channels 1, 2, 3
+; - Main melody is in Channel 1
+; - Occassional double stops / chords when Channel 2 and/or 3 have notes
+;
+; In Game Music
+; -------------
+; - Plays an (devilishly infuriating but) well put together sequence of 256 notes per channel
+; - Music is documented in repton-main-music.asm
+; - Music is across Channels 1, 2, 3
+; - Channels 1 and 2 always play the same note 
+; - Source code could have been reduced by 256 bytes if Channel 2
+;   was coded to only play Channel 1 notes instead of reading its
+;   own identical notes
+; - Music continuously loops
+; - Music controlled by VSYNC event (event happens every 20ms or 50 times a second)
+; - VSYNC event triggers call to EVNT/EVENTV
+; - EVNTV/EVENTV calls handler fn_enable_timer_2
+; - fn_enable_timer_2 sets one shot countdown timer to 2,512 microseconds
+; - IRQ2V is set to point at fn_event_handler_IRQ2V
+; - When Timer 2 fires, it calls the routine above pointed at by IRQ2V
+; - Routine only plays next music notes in sequence every 8th time around the loop
+;   it does this by ANDing with $07 and checking for zero
+; - It then clears the interrupt and disables Timer 2
+; - Standalone music that can be compiled separately can be found in repton-music.asm
+;
+; Screen
+; ------
+; - Set up in REPTON1 before REPTON2 is loaded
+; - Game runs in 4 colour MODE 5
+; - Characters per line are set to 32 ($20) to reduce visible screen memory
+; - and to simplify some of the maths
+; - Visible screen memory is therefore $6000 - $7FFF (normally starts at $5800)
+; - No offscreen buffering
+; - During game, only the edges are updated as the new column scrolls into view
+;
+; Colours
+; -------
+; - Defaults colours are Black, Red, Yellow, Green
+; - Level colours are set to Black, <level specific>, Yellow, Green
+; - <Level specific> colour is based on the zero based level number th ecolour
+;   in a lookup table at data_screen_physical_colour_lookup
+;
+; Repton
+; ------
+; - When moving up/down or left/right the animation state is held in
+;   var_repton_animation_state ($0905) including the explosion sequence at death
+; - var_repton_idle_counter ($0906) is used to track game loops since last key press
+; - If no key has been detected for 127 times around the main game loop
+;   then the repton animation will change to the standing animation sequence
+;
+; Dissolve Screen
+; ---------------
+; - Routine that handles this is fn_dissolve_screen
+; - VSYNC is disabled at the start of the routine
+; - Uses a random number generator routine (see fn_generate_random_number for details)
+; - To find a memory location for a random byte, it generates an address
+; - MSB of the address is the (generated random number AND $F0) OR $E0 which
+;   always gives a $F0xx or $E0xx MSB
+; - Uses memory from $E000 to $F0FF for random byte values
+; - The random byte values are ANDed with what is on the screen 
+;   and written back to the screen
+; - Iterates 14 times over the entire screen $6000-$7FFF which seems good enough
+;   to dissolve most pixel
+; - Dissolve iterations are controlled by zp_dissolve_screen_iterations
+; - Value can be tweaked at $0D6B
+; 
+; Interrupts
+; ----------
+; - Start of VSYNC is used in game to set User VIA one shot Timer 2 timer
+; - VSYNC triggers 50 times a second / every 20 ms
+; - VSYNC is processed by redirecting EVNTV / EVENTV to fn_enable_timer_2
+; - User VIA Timer 2 is used to trigger next on-game music
+; - IRQV2 is used for when User VIA Timer 2 fires - used to play the in-game music
+;
+; Timers
+; ------
+; - User VIA Timer 2 is used for in-game music as above in Interrupts
+; - Vertical sync is used as a wait/pause timer in multiples of 20ms
+; - Code will loop waiting n times for vertical sync to reach the desired time limit
+;
+; Monsters
+; --------
+; - State is held in 6 bytes blocks from $0980
+; - First empty (inactive) monster slot is used when a monster spawns
+; - Maps have a maximum of 3 monsters
+; - Code could have up to 20 (enough memory available) from $0980 to $09F7
+; - Random number is generated and lowest bit used to determine if 
+;   it should move up/down or left/right
+; - Monsters "jitter" too
+;
+; Random Number Generation
+; ------------------------
+; - User VIA Registers Timer 1 High Order Counter and Low Order Counter
+; - Documented in fn_generate_random_number
+;
+; Maps
+; ----
+; - Mini-maps are only shown for screens A - H, code stops it showing (mean!) for I-L
+;
+; - An object is an egg, or repton, rock, diamond, rounded corner, earth, wall segment etc
+; - Each object has an id e.g. $1D for a rock or $1E for a diamond
+; - An object is made up of 4x4 tiles 
+; - Each object is therefore 16 tiles
+;
+; - Objects are mapped to component tiles in repton-map-objects-to-tile-defs.asm
+; - The same tile can be used in multiple objects 
+; - Maps can show 32x32 objects
+; - Maps are therefore 128x128 tiles
+;
+; - (xpos, ypos) refers to a 128x128 tile co-ordinate
+; - (x,y)        refers to a 32x32 object co-ordinate
+; 
+; - Off map areas (xpos or ypos > 127) default to the object defined at $1B4B
+; 
+; - Visible region of the map is 8x8 objects
+; - Visible region of the map can therefore show 32x32 tiles
+; - Visible region shows half an object at each edge, so 6 full objects are shown
+;   and 2 half objects horiztontally and vertically
+; 
+; - Maps are stored as bit stream across bytes with every 5 bits identifying
+;   an object id - they are not byte aligned however
+; - The map is compressed in that 5 bits ar used to represent
+;   each object so objects can have a value of $00 to $1F. Spare
+;   bits are used for the next object so
+;
+;   Looking at Screen A, which starts at &4200 the first
+;   5 bytes contain 8 object defintions (from &4200 to &4204)
+;   with the rest following after (&4200++)
+;
+;               <-------------------Memory----------------------------
+;   Address:      &4205    &4204    &4203    &4202    &4201   &4200
+;                -------- -------- -------- -------- -------- --------
+;   Byte:           &38      &B5      &AD      &6B      &5A      &D6
+;   Binary:      00111000 10110101 10101101 01101011 01011010 11010110
+;                --><---> <---><-- -><--->< ---><--- ><---><- --><--->
+;   Object:           9     8    7     6     5    4     3     2    1
+;   Obj value:       &18   &16  &16   &16   &16  &16   &16   &16  &16
+;   Obj type:      Earth  BrickBrick Brick BrickBrick Brick BrickBrick
+;
+; - Current level map is decompressed and stored in $0400 to $07FF
+;   for faster game time access
+;
+; File offsets
+; ------------
+; Offset in the REPTON2 file can be calculated with
+;
+; File offset = memory address - $0A00
+;
+; Summary Memory Map
+; ------------------
+; From  To      Bytes   Type            Description
+;
+; 0400  07FF    1024    Data            Decompressed current level
+; 0A00  0CFF    768     Music           In-game music notes
+; 0D00  223F    5440    Code            Code, data, lookup tables, text strings
+; 2240  22FF    192     Music           New game intro music
+; 2300  26FF    1024    Code            Code, data, lookup tables, text strings
+; 2700  29FF    768     Graphics        Repton has been finished
+; 2A00  2AFF    256     Code            Code, data, lookup tables, text strings
+; 2B00  2BE2    224     Data            High scores and high score names
+; 2BE3  2D57    175     Code            Code, data, lookup tables, text strings
+; 2D58  2DF3    156     Data            Screen passwords
+; 2DF4  2EFF    268     Code            Code, data, lookup tables, text strings
+; 2F00  2FBF    191     Graphics        Start screen Repton logo
+; 2FC0  3FFF    4160    Graphics        Sprites that animate e.g. Repton, egg, monster, explosion
+; 4000  41FF    512     Data            Static sprite (object) to tile mapping
+; 4200  57FF    1536    Data            All maps in a bit stream
 
+; Zero Page Memory Usage
+; ----------------------
+; From  To      Bytes   Type            Description
+;
+; 0000  0013    20      Data            Zero page variables
+; 0014  003E    43      Not used        
+; 003F  003F    1       Data            Zero page variables
+; 0040  005F    32      Not used        
+; 0060  0067    8       Data            Zero page variables
+; 0068  0069    2       Not used        
+; 006A  006B    2       Data            Zero page variables
+; 006C  006F    4       Not used        
+; 0070  007A    11      Data            Zero page variables
+; 007B  007B    1       Not used        
+; 007C  0082    7       Data            Zero page variables
+; 0083  008B    8       Not used        
+; 008C  008F    4       Data            Zero page variables
+; 0090  00FB    108     Not used        
+; 00FC  00FC    1       Data            Interrupt Accumulator Storage
+; 00FD  00FF    3       Not used
+;
+; Transient Data Memory Map
+; -------------------------
+; From  To      Bytes   Type            Description
+; 
+; 0206  0207    2       Vector          IRQV2 
+; 0220  0221    2       Vector          EVNTV/EVENTV
+;
+; 034E  034E    1       OS Workspace    MSB of HIMEM - set in REPTON1
+; 0352  0352    1       OS Workspace    Bytes per screen row (LSB) - set in REPTON1
+; 0353  0353    1       OS Workspace    Bytes per screen row (MSB) - set in REPTON1
+; 0354  0354    1       OS Workspace    Size of screen memory in pages - set in REPTON1
+; 0355  0355    1       OS Workspace    Current Screen Mode - set in REPTON1
+; 0356  0356    1       OS Workspace    Size of screen memory - set in REPTON1
+;
+; 0400  07FF    1024    Data            Decompressed current level map
+; 0800  08FF    256     Data
+; 0900  09FF    256     Data
+; 0900  0900    1       Data            Screen / level number
+; 0901  0901    1       Data            Lives left
+; 0902  0902    1       Data            Random number
+; 0903  0903    1       Data            Repton vertical direction indicator
+; 0904  0904    1       Data            Repton horizontal direction indicator
+; 0905  0905    1       Data            Repton animation sprite 
+; 0906  0906    1       Data            Repton idle counter 
+; 0907  0907    1       Data            Main loop counter
+; 0908  0908    1       Data            Number of diamonds remaining
+; 0909  090B    3       Data            BCD score digits
+; 090C  090D    2       Data            Time reamining
+; 090E  0910    3       Data            Player High Score
+; 0911  0911    1       Data            Sound on/off status
+; 0912  0912    1       Data            Music on/off status
+; 0913  0913    1       Data            If both sound and music are off flag
+; 0914  0914    1       Data            Which level the player started on
+;
+; 0920  0920    1       Data            Used as an index to loop through the high scores AND lowest high score LSB
+; 0921  0922    1       Data            Bubble sort iteration AND lowest high score middle byte value
+; 0922  0922    1       Data            Lowest high score MSB
+; 0923  0923    1       Data            Lowest high score index
+;
+; 0980  0980    1       Data            Monster 1 - x co-ordinate            
+; 0981  0981    1       Data            Monster 1 - y co-ordinate
+; 0982  0982    1       Data            Monster 1 - x co-ordinate "jitter" value
+; 0983  0983    1       Data            Monster 1 - y co-ordinate "jitter" value
+; 0984  0984    1       Data            Monster 1 - counter for delay on egg crack and delay on monster moving initally
+; 0985  0985    1       Data            Monster 1 - is this monster slot being used?
+; 
+; 0986  0986    1       Data            Monster 2 - x co-ordinate            
+; 0987  0987    1       Data            Monster 2 - y co-ordinate
+; 0988  0988    1       Data            Monster 2 - x co-ordinate "jitter" value
+; 0989  0989    1       Data            Monster 2 - y co-ordinate "jitter" value
+; 098A  098A    1       Data            Monster 2 - counter for delay on egg crack and delay on monster moving initally
+; 098B  098B    1       Data            Monster 2 - is this monster slot being used?
+; 
+; 098C  098C    1       Data            Monster 3 - x co-ordinate            
+; 098D  098D    1       Data            Monster 3 - y co-ordinate
+; 098E  098E    1       Data            Monster 3 - x co-ordinate "jitter" value
+; 098F  098F    1       Data            Monster 3 - y co-ordinate "jitter" value
+; 0990  0990    1       Data            Monster 3 - counter for delay on egg crack and delay on monster moving initally
+; 0991  0991    1       Data            Monster 3 - is this monster slot being used?
+; 
+; 09FC  09FC    1       Data            Indicates if the restart key is pressed
+;
+; 09FE  09FE    1       Data            Main in-game music note sequence number
+; 
+; 09FF  09FF    1       Data            How fast the music plays (nth time the interrupt fires)
+; 
+;
+; Relocated  Memory Map
+; ------------------
+; From  To      Bytes   Type            Description
+;
+; 0A00  0AFF    256     Music           Main game music - channel 1
+; 0B00  0BFF    256     Music           Main game music - channel 2
+; 0C00  0CFF    256     Music           Main game music - channel 3
+; 0D00  0D00    1       Unused          Spare byte
+; 0D01  0D3A    58      Code            fn_event_handler_IRQ2V
+; 0D3B  0D53    25      Code            fn_set_sound_block_and_play_sound
+; 0D54  0D55    2       Unused          Spare bytes
+; 0D56  0D69    20      Code            fn_draw_repton
+; 0D6A  0D6E    5       Code            fn_disable_vsync_event
+; 0D6F  0D75    7       Code            fn_disable_vsync_event_only
+; 0D76  0D7E    9       Code            fn_reset_palette_music_and_vsync
+; 0D7F  0D8F    17      Code            fn_play_game_sound
+; 0D90  0DA9    25      Code            fn_enable_timer_2
+; 0DAA  0DB1    8       Code            fn_disable_timer_2
+; 0DB2  0DB3    2       Unused          Spare bytes
+; 0DB4  0DBF    12      Code            fn_play_sound_and_calc_screen_address
+; 0DC0  0DCE    16      Code            text_out_of_time
+; 0DCF  0DCF    1       Unused          Spare bytes
+; 0DD0  0DF5    38      Code            fn_check_out_of_time
+; 0DF6  0DFF    10      Unused          Spare bytes
+; 0E00  0E01    2       Unused          Spare bytes
+; 0E02  0E21    32      Lookup table    data_repton_pose_lookup_table_lsb/msb
+; 0E22  0E29    8       Lookup table    repton_moving_left_sprite_lookup
+; 0E2A  0E31    8       Lookup table    repton_moving_right_sprite_lookup
+; 0E32  0E35    4       Lookup table    repton_standing_idle_looking
+; 0E36  0E3D    8       Lookup table    data_map_object_required_bit_mask
+; 0E3E  0E45    8       Lookup table    data_partial_sprite_offset_lookup_lsb/msb
+; 0E46  0E53    14      Data            envelope_1
+; 0E54  0E5F    12      Lookup table    data_screen_physical_colour_lookup
+; 0E60  0E9F    64      Lookup table    data_screen_character_lookup_table
+; 0EA0  0EAF    16      Lookup table    ....
+; 0EB0  0EBE    15      Lookup table    ....
+; 0EBF  0EDE    32      Data            data_mini_map_characters
+; 0EDF  0EE2    4       Data            data_screen_colour_masks
+; 0EE3  0EF8    22      Text            text_by_superior_software
+; 0EF9  0F01    9       Text            text_score
+; 0F02  0F0C    11      Text            text_hi_score
+; 0F0D  0F13    7       Text            text_time
+; 0F14  0F1B    8       Text            text_lives
+; 0F1C  0F26    11      Text            text_diamonds
+; 0F27  0F3E    24      Text            text_screen
+; 0F3F  0F53    21      Text            text_sound
+; 0F54  0F74    33      Text            text_press_escape
+; 0F75  0F95    33      Text            text_press_return
+; 0F96  0FB3    30      Text            text_press_space
+; 0FB4  0FC6    19      Code            fn_wait_for_vertical_sync
+; 0FC7  1031    107     Code            fn_check_if_high_score...
+; 1032  1032    1       Unused          Spare byte
+; 1033  103B    9       Code            ...fn_check_if_high_score
+; 103C  1043    8       Unused          Spare bytes
+; 1044  1059    22      Code            fn_generate_random_number
+; 105A  1084    43      Code            fn_play_music_sound
+; 1085  108E    10      Code            fn_read_key
+; 108F  10B0    34      Code            fn_define_logical_colour
+; 10B1  10C2    18      Code            fn_calc_screen_address_from_x_y
+; 10C3  10DB    25      Code            fn_check_sound_keys
+; 10DC  10F3    24      Code            fn_check_escape_key
+; 10F4  1139    70      Code            fn_check_for_map_key_press...
+; 113A  113D    4       Unused          Spare bytes
+; 103E  114A    13      Code            ...fn_check_for_map_key_press
+; 114B  1190    70      Code            fn_write_3_byte_display_value_to_screen
+; 1191  11A5    22      Code            fn_print_digit_to_screen
+; 11A6  11BE    25      Code            fn_write_string_to_screen
+; 11BE  1215    88      Code            fn_print_character_to_screen
+; 1216  121D    1       Code            fn_print_character_and_increment_xpos...
+; 1217  1217    1       Unused          Spare byte
+; 1218  121D    6       Code            ...fn_print_character_and_increment_xpos
+; 121E  1252    53      Code            fn_check_if_score_update_or_key
+; 1253  12A9    87      Code            fn_update_score_and_check_if_a_safe
+; 12AA  12F5    76      Code            fn_change_safes_to_diamonds
+; 12F6  1309    20      Code            fn_check_if_rock_egg_falling_and_move_it...
+; 130A  130B    2       Unused          Spare bytes
+; 130C  1329    29      Code            ...fn_check_if_rock_egg_falling_and_move_it 
+; 132A  13A9    128     Code            fn_drop_rock_or_egg
+; 13AA  13D1    40      Code            fn_check_if_egg_or_rock_can_roll
+; 13D2  1436    101     Code            fn_roll_rock_left_and_down
+; 1437  1497    97      Code            fn_roll_rock_right_and_down
+; 1498  1498    1       Unused          Spare byte
+; 1499  14D2    58      Code            fn_check_monster_collision
+; 14D3  1526    83      Code            fn_check_if_monster_dead
+; 1527  1557    50      Code            fn_kill_monster
+; 1558  1587    48      Code            fn_crack_egg
+; 1588  15B0    41      Code            fn_update_all_monsters
+; 15B1  15F0    64      Code            fn_move_monster
+; 15F1  168D    156     Code            fn_check_monster_movement
+; 168E  16AD    32      Code            fn_draw_or_blank_monster
+; 16AE  16C7    26      Code            fn_draw_cracked_egg
+; 16C8  16E1    26      Code            fn_draw_monster_standing
+; 16E2  16EA    8       Code            fn_wait_120ms
+; 16EB  1707    29      Code            fn_decrement_remaining_time
+; 1708  178D    134     Code            fn_kill_repton
+; 178E  1798    11      Code            fn_wait_600ms_then_initialise_game
+; 1799  17A7    15      Code            fn_write_r_to_restart
+; 17A8  17AE    7       Code            fn_set_press_escape_lsb
+; 17AF  17B4    6       Code            fn_update_high_score_reset_music
+; 17B5  18E4    304     Code            fn_display_repton_start_screen
+; 18E5  195C    119     Code            fn_write_plenty_to_screen
+; 195D  1976    26      Code            fn_add_to_score
+; 1977  19B9    43      Code            fn_remove_repton
+; 19BA  19C9    16      Code            fn_lookup_repton_sprite_and_display
+; 19CA  1A1B    82      Code            fn_display_sprite
+; 1A1C  1AE8    205     Code            fn_draw_or_blank_object
+; 1AE9  1B21    57      Code            fn_blank_screen_object
+; 1B22  1B4D    43      Code            fn_update_6845_screen_start_address
+; 1B4E  1BBC    111     Code            fn_lookup_screen_tile_for_xpos_ypos
+; 1BBD  1BED    48      Code            fn_lookup_screen_object_for_x_y
+; 1BEE  1BFA    13      Code            fn_lookup_map_character_and_display
+; 1BFB  1C39    63      Code            fn_display_tile
+; 1C3A  1C6A    48      Code            fn_write_tile_to_screen
+; 1C6B  1CA0    54      Code            fn_move_repton_down
+; 1CA1  1CD5    53      Code            fn_move_repton_up 
+; 1CD6  1D90    187     Code            fn_move_repton_left
+; 1D91  1E4B    187     Code            fn_move_repton_right
+; 1E4C  1E74    41      Code            fn_get_nth_bit_from_memory
+; 1E75  1EAD    57      Code            fn_get_next_map_object
+; 1EAE  1EBE    17      Code            fn_get_next_map_object_bit
+; 1EBF  1F08    74      Code            fn_reset_game
+; 1F09  1F81    121     Code            fn_check_repton_movement
+; 1F82  1FCE    77      Code            fn_dissolve_screen
+; 1FCF  1FEC    30      Code            fn_initialise_game
+; 1FED  1FEF    3       Code            fn_initialise_game_after_restart
+; 1FF0  2004    21      Code            fn_initialise_game_after_restart_no_high_score
+; 2005  2007    3       Code            fn_do_game_reset
+; 2008  2026    30      Code            fn_reset_and_show_start_screen
+; 2027  2157    304     Code            fn_return_pressed_from_game
+; 2158  2185    46      Code            fn_check_r_d_w_keys
+; 2186  218F    19      Code            fn_set_sound_and_music_status
+; 2190  219E    15      Code            fn_clear_screen_show_high_score_table
+; 219F  21CA    43      Code            fn_show_high_score_repton_logo
+; 21CB  21CF    5       Unused          Spare bytes
+; 21D0  221B    76      Code            fn_play_intro_music
+; 221C  2230    21      Code            fn_draw_rock_right_and_check_repton
+; 2231  2236    6       Code            fn_write_string_and_set_escape_lsb
+; 2237  223F    9       Unused          Spare Bytes            
+; 2240  22FF    192     Music           Game intro music 
+; 2300  2325    38      Code            fn_sort_and_display_scores...
+; 2326  2340    27      Unused          Spare bytes
+; 2341  244E    270     Code            ...fn_sort_and_display_scores
+; 244F  244F    1       Unused          Spare byte
+; 2450  245D    14      Text            text_screen_complete_press_space
+; 245E  24B2    85      Text            text_screen_complete_well_done
+; 24B3  24C2    16      Code            fn_reset_music_and_draw_repton
+; 24C3  24D9    23      Text            text_copyright
+; 24DA  24FF    38      Code            fn_display_high_score_name_entry_field
+; 2500  2509    10      Code            fn_reset_palette_to_default_game_colours
+; 250A  2517    14      Code            fn_set_palette_to_default_with_screen_lookup_colour
+; 2518  251F    8       Code            fn_default_palette_with_cyan
+; 2520  2525    6       Code            fn_disable_vsync_event_and_change_palette
+; 2526  255B    54      Code            fn_check_if_password_match
+; 255C  2566    11      Code            fn_reset_start_and_started_on_screen
+; 2567  2590    42      Code            fn_check_if_nearly_out_of_time
+; 2591  2597    7       Code            fn_add_one_to_lives_left_for_display
+; 2598  25A2    11      Code            fn_disable_vsync_create_map_colours
+; 25A3  25C6    36      Code            fn_display_repton_logo_for_high_score_entry
+; 25C7  25CF    9       Code            fn_wait_for_vsync_and_set_sheila_address_to_12
+; 25D0  25F8    41      Code            fn_display_p_or_r_option
+; 25F9  2624    44      Code            fn_check_p_r_d_w_keys
+; 2625  262B    7       Code            fn_check_intro_music
+; 262C  2634    9       Code            fn_calc_drop_volume_and_play_sound
+; 2635  263F    11      Unused          Spare bytes
+; 2640  264C    13      Code            fn_game_start
+; 264D  2652    19      Code            fn_set_high_score_mlsb_and_start_screen
+; 2653  266A    24      Code            fn_check_if_intro_music_should_play
+; 266B  2676    12      Code            fn_set_start_screen_and_reset_game
+; 2677  269A    36      Code            fn_show_high_score_table
+; 269B  269F    5       Unused          Spare bytes
+; 26A0  26A6    7       Code            fn_set_start_and_started_on_screen
+; 26A7  26B3    13      Code            fn_restart_game
+; 26B4  26FF    76      Unused          Spare bytes
+; 2700  29FF    768     Graphics        Repton has been finished
+; 2A00  2A28    41      Code            fn_replace_lowest_high_score_with_current
+; 2A29  2A3E    22      Code            fn_cache_lower_high_score
+; 2A3F  2A4D    15      Code            fn_call_osword_and_reset_score
+; 2A4E  2AAA    93      Code            fn_display_completed_screen
+; 2AAB  2AB6    12      Code            fn_oswrch_and_reset_screen_start_addr
+; 2AB7  2AC1    11      Code            fn_flush_all_buffers_cache_xpos_and_ypos
+; 2AC2  2AF2    49      Code            fn_check_and_update_high_score
+; 2AF3  2AFE    12      Code            fn_compare_user_password_character
+; 2AFF  2AFF    1       Unused          Spare bytes
+; 2B00  2B17    24      Data            data_high_score
+; 2B18  2BD7    192     Data            data_high_score_names
+; 2BD8  2BE2    8       Data            data_sorted_score_offsets
+; 2BE3  2BFF    29      Unused          Spare bytes
+; 2C00  2C0A    11      Code            fn_loop_wait_for_space_bar_on_screen
+; 2C0B  2C14    10      Unused          Spare bytes
+; 2C15  2C97    130     Code            fn_display_password_screen
+; 2C98  2C9A    3       Unused          Spare bytes
+; 2C9B  2CB6    27      Text            text_press_space_bar_to_play
+; 2CB6  2CD2    28      Text            text_p_to_enter_password
+; 2CD3  2CEF    29      Text            text_r_to_restart 
+; 2CF0  2CFF    16      Text            text_enter_password
+; 2D00  2D21    34      Text            text_congrats_enter_name
+; 2D22  2D2D    14      Text            text_last_score
+; 2D2E  2D3F    16      Unused          Spare bytes
+; 2D40  2D47    8       Text            text_screen_matched
+; 2D48  2D56    15      Code            fn_call_oswrch_and_reset_high_score
+; 2D57  2D57    1       Unused          Spare byte
+; 2D58  2D63    12      Text            text_password_screen_a
+; 2D64  2D6F    12      Text            text_password_screen_b
+; 2D70  2D7B    12      Text            text_password_screen_c
+; 2D7C  2D87    12      Text            text_password_screen_d
+; 2D88  2D93    12      Text            text_password_screen_e
+; 2D94  2D9F    12      Text            text_password_screen_f
+; 2DA0  2DAB    12      Text            text_password_screen_g
+; 2DAC  2DB7    12      Text            text_password_screen_h
+; 2DB8  2DC3    12      Text            text_password_screen_i
+; 2DC4  2DCF    12      Text            text_password_screen_j
+; 2DD0  2DDB    12      Text            text_password_screen_k
+; 2DDC  2DE7    12      Text            text_password_screen_l
+; 2DE8  2DF3    12      Data            data_password_lsb_lookup_table
+; 2DF4  2DF9    6       Code            fn_write_password_to_screen
+; 2DFA  2DFF    6       Unused          Spare bytes
+; 2E00  2E63    100     Code            fn_get_player_password_or_name
+; 2E64  2E72    15      Code            fn_set_rest_of_password_to_crs
+; 2E73  2E93    33      Code            fn_write_sound_music_password_to_screen
+; 2E94  2EA7    20      Text            text_music
+; 2EA8  2EB2    11      Text            text_password
+; 2EB3  2EDF    45      Code            fn_write_music_status_and_pwd_to_screen
+; 2EE0  2EE3    4       Text            text_on
+; 2EE3  2EE7    4       Text            text_off
+; 2EE8  2EFF    24      Data            data_player_entered_password_or_name
+; 2F00  2FBF    191     Graphics        Start screen repton logo
+; 2FC0  3FFF    4160    Graphics        Sprites that animate e.g. Repton, egg, monster, explosion
+; 4000  41FF    512     Data            Static sprite (object) to tile mapping
+; 4200  57FF    1536    Data            All maps in a bit stream
+;
+; Interesting Pokes
+; -----------------
+; - Change the value below to put another object as the off map icon
+;   ?&1B4C = $15 
+; - Allow mini-maps on all screens
+;   ?&10FF = $FF
+; - Speed up the in-game music 
+;   ?&0D13 = $01
+; - Slow down the in-game music 
+;   ?&0D13 = $10
+; - Change the value below to change the dissolve screen iterations
+;   ?&0D6B=$0E
+; - Change the lives left in-game
+;   ?&0901=$03
+; - Change default lives
+;   ?&1FF6=$03
+; - Change default time to complete a level to 9999
+;   note the values have to be in BCD so no hex characters allowed
+;   ?&2016=&99 ?&201B=&99
 
+; var_repton_idle_counter
+; monster pause time
 
 ; Read character (from keyboard) to A
 OSRDCH = $FFE0 
 
-; Write character (to screen) from A
+; Write character (to screen) from A - OSWRCH uses VDU values
 OSWRCH = $FFEE
 
 ; Perfrom miscellaneous OS operation using control block to pass parameters
@@ -32,6 +601,9 @@ OSWORD = $FFF1
 ; Perfrom miscellaneous OS operation using registers to pass parameters
 OSBYTE = $FFF4
 
+
+; Address of the memory mapped hardware
+; for the 6845 CRTC video controller
 SHEILA_6845_ADDRESS=$FE00
 SHEILA_6845_DATA=$FE01
 
@@ -51,230 +623,477 @@ SHEILA_USER_VIA_R9_T2C_H = $FE69
 ; Sheila User VIA Interrupt Enable Register
 SHEILA_USER_VIA_R14_IER = $FE6E
 
+; OS Workspace - used to restore the accumulator value
+; after the interrupt from Timer 2
+OS_ZP_INTERRUPT_A_STORAGE=$00FC
+
+; OSWRCH value for the new logical to physical colour mapping
+; Top four bits are the logical colour, bottom four are the physical
+zp_logical_physical_colour=$0000
+
+; Used to temporarily cache the map x co-ordinate 
+; when getting the mini-map character to display
+zp_map_x_cache=$0000
+
+; ---------------------------------------------
+; These two are paired for reading the Repton
+; sprite and writing to the screen in fn_display_tile
+; and fn_write_tile_to_screen
+
+; Screen memory location where to write the current map tile
+zp_screen_write_address_lsb = $0000
+zp_screen_write_address_msb = $0001
+
+; Where to read the current tile from before writing to the
+; screen
+zp_tile_read_address_lsb = $0002
+zp_tile_read_address_msb = $0003
+; ---------------------------------------------
+; These two are paired for reading the Repton
+; sprite and writing to the screen in fn_display_sprite
+
+; Repton sprite tiles read address (for when he
+; needs to be written to the screen) and used
+; to index the tiles that will be written to the screen
+; for other objects 
+zp_sprite_tiles_read_address_lsb=$0000
+zp_sprite_tiles_read_address_msb=$0001
+
+; Screen memory location where to write the current
+; map tile
+zp_target_screen_address_lsb=$0002
+zp_target_screen_address_msb=$0003
+
+; ---------------------------------------------
+
+; Used to hold the screen start address DIV 8
+; that is passed to the 6845 CRTC Video controller
+; to scroll the screen
+zp_screen_start_address_lsb_div8=$0000
+zp_screen_start_address_msb_div8=$0001
+
+; ---------------------------------------------
+; Which sound channel to use for the sound
+; Used with  A (amplitude), X (pitch), Y (duration)
+; when calling fn_play_sound - all this values
+; get copied into the appropriate LSBs of
+; the zp_sound_block... before OSWORD
+; is called
+zp_required_sound_channel=$0000
+
+; Sound channel to use - MSB is always zero
+zp_sound_block_channel_lsb=$0001
+zp_sound_block_channel_msb=$0002
+
+; Sound amplitude to use - MSB is always zero
+zp_sound_block_amplitude_lsb=$0003
+zp_sound_block_amplitude_msb=$0004
+
+; Sound pitch to use - MSB is always zero
+zp_sound_block_pitch_lsb=$0005
+zp_sound_block_pitch_msb=$0006
+
+; Sound duration to use - MSB is always zero
+zp_sound_block_duration_lsb=$0007
+zp_sound_block_duration_msb=$0008
+; ---------------------------------------------
+; Used to calculate the number of tiles to be 
+; drawn when showing a sprite on the edge
+; of a screen (jittery monsters aren't
+; just 2)
+zp_temp_x_calc=$0002
+zp_temp_y_calc=$0003
+
+; Number of sprite tiles to copy to the screen
+zp_sprite_tiles_to_copy_or_blank = $0004
+
+; Default counters for looping around and blanking or displaying
+; an object on the screen e.g. Repton or a rock. These are not  
+; decremented. Objects are made up of 4x4 tiles
+; See fn_draw_or_blank_object
+zp_object_width_default_counter=$0004
+zp_object_height_default_counter=$0005
+
+; Temporarily cache the xpos and ypos in 
+; fn_lookup_screen_tile_for_xpos_ypos
+zp_tile_xpos_cache=$0006
+zp_tile_ypos_cache=$0007
+
+; Temporarily cache the x and y in 
+; fn_lookup_screen_tile_for_x_y
+zp_tile_x_cache=$0006
+zp_tile_y_cache=$0007
+
+; Working counters for looping around and blanking or displaying
+; an object on the screen e.g. Repton or a rock. These ARE
+; decremented. Objects are made up of 4x4 tiles
+; See fn_draw_or_blank_object 
+zp_object_width_working_counter=$0006
+zp_object_height_working_counter=$0007
+
+; General bytes for manipulating xpos/ypos values
+; in fn_lookup_screen_tile_for_xpos_ypos
+zp_general_xpos_lookup_calcs=$0008
+zp_general_ypos_lookup_calcs=$0009
+
+; Used to reference the memory location of the
+; the string to write to the screen 
+zp_string_read_address_lsb = $000A
+zp_string_read_address_msb = $000B
+
+; Used to store the memory location of the current
+; processed position of the map or sprite details 
+; of an object
+zp_map_or_object_address_lsb = $000A
+zp_map_or_object_address_msb = $000B
+
+; When changing all safes to diamonds, remember the 
+; map position where repton picked up the key 
+; by caching it here
+zp_map_or_object_address_lsb_cache = $000C
+zp_map_or_object_address_msb_cache = $000D
+
+; Used to track which of the 32x32 visible tiles
+; on the screen is being drawn in fn_return_pressed_from_game
+zp_game_screen_column_to_draw = $000E
+zp_game_screen_row_to_draw = $000F
+
+; Whether a trailing zero should be drawn after a number
+; is converted into digits
+zp_print_zero_or_not_flag =$000F
+
+; Used to hold the BCD values that need conversion
+; into individual digits that can be printed to the 
+; screen - e.g. score, high score, remaining time etc
+zp_display_value_msb = $0010
+zp_display_value_mlsb = $0011
+zp_display_value_lsb = $0012
+
+; When the screen scrolls, where to write anew tile
+zp_new_tile_xpos=$0010
+zp_new_tile_ypos=$0011
+
+; Cache ofthe screen's top left (xpos,ypos) 
+; this is where the top left of the screen is on the map
+zp_visible_screen_top_left_xpos_cache = $0012
+zp_visible_screen_top_left_ypos_cache = $0013
+
+; Current password character ANDed with $5F
+; for case insensitive comparison
+zp_masked_password_character=$003F
+
+; ---------------------------------------------
+; Sound block for the in-game music 
+;
+; Sound channel to use - MSB is always zero
+zp_music_block_channel_lsb=$0060
+zp_music_block_channel_msb=$0061
+
+; Sound amplitude to use - MSB is always zero
+zp_music_block_amplitude_lsb=$0062
+zp_music_block_amplitude_msb=$0063
+
+; Sound pitch to use - MSB is always zero
+zp_music_block_pitch_lsb=$0064
+zp_music_block_pitch_msb=$0065
+
+; Sound duration to use - MSB is always zero
+zp_music_block_duration_lsb=$0066
+zp_music_block_duration_msb=$0067
+
+; ---------------------------------------------
+; Length of the user entered password
+zp_password_character_count = $006A
+
+; Cache for the value of the current password character
+; that's being processed
+zp_password_current_character_cache = $006B
+
+; Current visible screen write address for when
+; writing the dissolve effect to the screen
+zp_dissolve_screen_write_address_lsb=$0070
+zp_dissolve_screen_write_address_msb=$0071
+
+; Used to lookup the level passwords - holds the 
+; memory location of the current password
+zp_screen_password_lookup_lsb=$0070
+zp_screen_password_lookup_msb=$0071
+
+; Required map bit in the bitstream of the 
+; compressed map - used to decode the map bitstream
+zp_required_map_bit_lsb=$0070
+zp_required_map_bit_msb=$0071
+
+; Used to remember an object id
+zp_cached_object_id=$0070
+
+; Used to look for a 32x32 co-ordinate
+; for a rock or egg's position that needs
+; to drop - starts in the bottom right corner
+; one row up
+zp_map_x_for_rock_drop=$0070
+zp_map_y_for_rock_drop=$0071
+
+; Currently processed monster's position on the map
+zp_monster_x=$0070
+zp_monster_y=$0071
+
+; Original position of the rock or egg
+; so it can be blanked on the map ($00) when the rock
+; or egg is moved
+zp_map_object_update_lsb=$0071
+zp_map_object_update_msb=$0072
+
+; Number of iterations to apply the dissolve effect to the
+; screen
+zp_dissolve_screen_iterations=$0072
+
+; Used to loop through the level passwords and match
+; against the user entered password
+zp_screen_password_lookup_index=$0072
+
+; Used to hold the current map memory address position
+; when scanning from bottom right (one row up) to find
+; rocks or eggs that should drop
+zp_object_index_lsb=$0072
+zp_object_index_msb=$0073
+
+; Holds the (xpos,ypos) on the 128x128 tile map
+; when looping through to find a safe to 
+; change into a diamond
+zp_map_xpos_for_safe_change=$0072
+zp_map_ypos_for_safe_change=$0073
+
+; Holds the (xpos,ypos) on the visible screen to check
+; around Repton to see if he collided with a monster
+zp_repton_xpos=$0072
+zp_repton_ypos=$0073
+
+; Used as the address of the source byte to use to dissolve
+; the current visible screen byte (always in the range 
+; from $0E00 to $F0FF)
+zp_random_byte_source_lsb=$0073
+zp_random_byte_source_msb=$0074
+
+; Just used to cache the values of zp_object_index_lsb/msb
+; in fn_get_next_map_object
+zp_object_index_lsb_cache=$0074
+zp_object_index_msb_cache=$0075
+
+
+; Used to chache a map object id in various places
+zp_cached_object_id_for_rock_drop=$0074
+
+; Loop over the safe and change its tiles into
+; diamonds
+zp_object_x_parts_for_safe_change=$0074
+zp_object_y_parts_for_safe_change=$0075
+
+; Used to collect and hold the bits from the compressed
+; map before writing into map memory ($0400-$07FF)
+zp_object_id=$0076
+
+; Used to lookup the object on the map at that (x,y)
+; position before drawing on the mini-map
+zp_map_x = $0076
+zp_map_y = $0077
+
+; Used to cache the position to check for an object
+; to the left of Repton
+zp_left_object_index_lsb=$0076
+zp_left_object_index_msb=$0077
+
+; Used to loop through the encoded map looking for the
+; nth object (starting at zero)
+zp_nth_object_index_lsb=$0077
+zp_nth_object_index_msb=$0078
+
+; Holds the (x,y) on the 32x32 object map
+; when looping through to find a safe to 
+; change into a diamond
+zp_map_x_for_safe_change=$0077
+zp_map_y_for_safe_change=$0078
+
+; Caches an object id on the map when dropping a
+; rock right or left
+zp_cached_object_id_for_rock_drop_r_or_l=$0078
+
+; Memory location of where to write decoded
+; map objects
+zp_decoded_map_counter_lsb=$0079
+zp_decoded_map_counter_msb=$007A
+
+; Cache of the top left corner of the screen (xpos,ypos)
+zp_visible_screen_top_left_xpos_cache2=$007C
+zp_visible_screen_top_left_ypos_cache2=$007D
+
+; Current character to write to the screen in 
+; fn_write_string_to_screen
+zp_string_to_display_current_byte = $007E
+
+; Used to get all the bytes of the Repton logo
+; on the start screen and the high score screen
+zp_screen_write_total_byte_counter = $007F
+
+; Used to loop over the intro music at the start of a new game
+zp_sound_note_index=$007F
+
+; Currently processed monster slot (nth active monster)
+zp_monster_number=$007F
+
+; Position on the screen to write the text on 
+; start, password and high score screens
+zp_password_cursor_xpos = $0080
+zp_password_cursor_ypos = $0081
+
+; Colour mask used to blank out colours on non in-game
+; screens e.g. start, password, high score.  Can be set
+; to:
+;    $FF (show all colours)
+;    $F0 (show top logical colours 2 and 3)
+;    $0F (show bottom logical colours 1 and 2)
+zp_screen_colour_mask= $0082
+
+; Visible screen start (xpos,ypos)
+zp_visible_screen_top_left_xpos=$008C
+zp_visible_screen_top_left_ypos=$008D
+
+; Memory location that is the start of the visible screen
+; Used to scroll the screen by DIV 8 and passing to the 6845
+zp_screen_start_address_lsb = $008E
+zp_screen_start_address_msb = $008F
+
 ; Interrupt-request vector 2 (IRQ2V)
 IRQ2V_LSB = $0206
 IRQ2V_MSB = $0207
 
-; OS Workspace 
-OS_ZP_INTERRUPT_A_STORAGE=$00FC
-OS_WS_SCREEN_SIZE_PAGES=$0354
-OS_WS_MSB_OF_HIMEM=$034E
-OS_WS_NO_BYTES_PER_ROW_LSB=$0352
-OS_WS_NO_BYTES_PER_ROW_MSB=$0353
-OS_WS_SIZE_OF_SCREEN_MEMORY=$0353
-OS_WS_CURRENT_MODE=$0355
+EVENTV_LSB = $0220
+EVENTV_MSB = $0221
 
-zp_logical_physical_colour=$0000
-zp_screen_write_address_lsb = $0000
-zp_source_tile_lsb=$0000
-zp_map_x_cache=$0000
-zp_screen_start_address_lsb_div8=$0000
-zp_required_sound_channel=$0000
-
-zp_screen_start_address_msb_div8=$0001
-zp_screen_write_address_msb = $0001
-zp_source_tile_msb=$0001
-zp_sound_block_channel_lsb=$0001
-
-zp_tile_load_address_lsb = $0002
-zp_target_screen_address_lsb=$0002
-zp_temp_x_calc=$0002
-zp_sound_block_channel_msb=$0002
-
-zp_temp_y_calc=$0003
-zp_tile_load_address_msb = $0003
-zp_target_screen_address_msb=$0003
-zp_sound_block_amplitude_lsb=$0003
-
-zp_sprite_parts_to_copy_or_blank = $0004
-zp_object_width_default_counter=$0004
-zp_sound_block_amplitude_msb=$0004
-
-zp_object_height_default_counter=$0005
-zp_sound_block_pitch_lsb=$0005
-
-zp_tile_x_pos_cache=$0006
-zp_object_width_working_counter=$0006
-zp_sound_block_pitch_msb=$0006
-
-zp_tile_y_pos_cache=$0007
-zp_object_height_working_counter=$0007
-zp_sound_block_duration_lsb=$0007
-
-zp_general_xpos_lookup_calcs=$0008
-zp_sound_block_duration_msb=$0008
-
-zp_general_ypos_lookup_calcs=$0009
-
-zp_object_or_string_address_lsb = $000A
-
-zp_object_or_string_address_msb = $000B
-
-zp_object_or_string_address_lsb_cache = $000C
-
-zp_object_or_string_address_msb_cache = $000D
-
-zp_game_screen_column_to_draw = $000E
-
-zp_print_zero_or_not_flag =$000F
-zp_game_screen_row_to_draw = $000F
-
-zp_display_value_msb = $0010
-zp_new_tile_xpos=$0010
-
-zp_display_value_mlsb = $0011
-zp_new_tile_ypos=$0011
-
-zp_display_value_lsb = $0012
-zp_visible_screen_top_left_xpos_cache = $0012
-
-zp_visible_screen_top_left_ypos_cache = $0013
-
-zp_masked_password_character=$003F
-
-zp_music_block_channel_lsb=$0060
-
-zp_music_block_channel_msb=$0061
-
-zp_music_block_amplitude_lsb=$0062
-
-zp_music_block_amplitude_msb=$0063
-
-zp_music_block_pitch_lsb=$0064
-
-zp_music_block_pitch_msb=$0065
-
-zp_music_block_duration_lsb=$0066
-
-zp_music_block_duration_msb=$0067
-
-zp_password_character_count = $006A
-
-zp_password_current_character_cache = $006B
-
-zp_dissolve_screen_write_address_lsb=$0070
-zp_screen_password_lookup_lsb=$0070
-zp_starting_bit_offset_lsb_cache=$0070
-zp_cached_object_id=$0070
-zp_map_x_for_rock_drop=$0070
-zp_monster_x=$0070
-
-zp_dissolve_screen_write_address_msb=$0071
-zp_monster_y=$0071
-zp_screen_password_lookup_msb=$0071
-zp_starting_bit_offset_msb_cache=$0071
-zp_map_object_update_lsb=$0071
-zp_map_y_for_rock_drop=$0071
-
-zp_dissolve_screen_iterations=$0072
-zp_screen_password_lookup_index=$0072
-zp_object_index_lsb=$0072
-zp_map_object_update_msb=$0072
-zp_map_xpos_for_safe_change=$0072
-zp_repton_xpos=$0072
-
-zp_random_byte_source_lsb=$0073
-zp_object_index_msb=$0073
-zp_map_ypos_for_safe_change=$0073
-zp_repton_ypos=$0073
-
-zp_random_byte_source_msb=$0074
-zp_object_index_lsb_cache=$0074
-zp_cached_object_id_for_rock_drop=$0074
-zp_object_x_parts_for_safe_change=$0074
-
-zp_object_y_parts_for_safe_change=$0075
-zp_object_index_msb_cache=$0075
-
-zp_object_id=$0076
-zp_map_x = $0076
-zp_left_object_index_lsb=$0076
-
-zp_left_object_index_msb=$0077
-zp_nth_object_index_lsb=$0077
-zp_map_y = $0077
-zp_map_x_for_safe_change=$0077
-
-zp_map_y_for_safe_change=$0078
-zp_nth_object_index_msb=$0078
-zp_cached_object_id_for_rock_drop_r_or_l=$0078
-
-zp_current_map_cache_lsb=$0079
-zp_decode_map_counter_lsb=$0079
-
-zp_current_map_cache_msb=$007A
-zp_decode_map_counter_msb=$007A
-
-zp_visible_screen_top_left_xpos_cache2=$007C
-
-zp_visible_screen_top_left_ypos_cache2=$007D
-
-zp_string_to_display_current_byte = $007E
-
-zp_screen_write_total_byte_counter = $007F
-zp_sound_note_index=$007F
-zp_monster_number=$007F
-
-zp_password_cursor_xpos = $0080
-
-zp_password_cursor_ypos = $0081
-
-zp_screen_colour_mask= $0082
-
-; Actually screen start xpos
-zp_visible_screen_top_left_xpos=$008C
-
-zp_visible_screen_top_left_ypos=$008D
-
-zp_screen_start_address_lsb = $008E
-
-zp_screen_start_address_msb = $008F
-
-eventv_lsb_vector = $0220
-eventv_msb_vector = $0221
-
+; Player's current level / screen number
 var_screen_number = $0900
+
+; Number of player lives left (defaults to 4 i.e. $03)
 var_lives_left = $0901
+
+; When a random number is generated by fn_generate_random_number, it is stored here 
 var_random_value = $0902
+
+; Indicates if there is any vertical movement
+; $01 - Repton is moving up
+; $00 - Repton not moving up or down
+; $FF - Repton is moving down
 var_repton_vertical_direction=$0903
+
+; Indicates if there is any horizontal movement
+; $01 - Repton is moving right
+; $00 - Repton not moving right or left
+; $FF - Repton is moving left
 var_repton_horizontal_direction=$0904
+
+; Which Repton sprite to draw on screen - table at $0E00 shows poses
 var_repton_animation_state=$0905
+
+; Number of times around the game loop a movement key has not been pressed
+; If it reaches 127 then Repton changes into the standing and looking
+; animation sequence
 var_repton_idle_counter=$0906
+
+; Number of times around the main game loop - used to determine
+; if a monster should have left or right hand up and which standing
+; sprite should be used for Repton 
 var_main_loop_counter=$0907
+
+; Number of diamonds left for Repton to collect - calculated by counting the
+; number on the map when it's decompressed
 var_number_diamonds_left = $0908
+
+; Player's current score in BCD format
 var_score_lsb  = $909
 var_score_mlsb = $90A
 var_score_msb  = $90B
+
+; Player's remaining level time in BCD format
 var_remaining_time_lsb  = $90C
 var_remaining_time_msb  = $90D
+
+; Player's high score in BCD format
 var_high_score_lsb=$090E
 var_high_score_mlsb=$090F
 var_high_score_msb=$0910
+
+; Sound status on/off
 var_sound_status = $0911
+
+; Music status on/off
 var_music_status = $0912
 
-; Indicates the both sound and music are on
+; Indicates whether both sound and music are on
 var_both_sound_and_music_on_status = $0913
+
+; Which screen the player started on - used to see
+; if a player completed the whole game from Screen A 
+; through Screen L
 var_player_started_on_screen_x = $0914
 
+; Used as an index into the high score table
 var_score_index = $0920
+
+; High score names or values are not sorted in memory
+; instead there is a lookup table that is sorted - this 
+; is used when trying to find the lowest score so far 
+; when going through the table
 var_lowest_high_score_lsb=$920
-var_bubble_sort_pass=$0921
-var_score_to_display_offset=$0921
 var_lowest_high_score_mlsb=$921
 var_lowest_high_score_msb=$922
 
+; Bubble sort is used to sort the high score lookup table
+; This is the iteration counter
+var_bubble_sort_pass=$0921
+
+; nth high score value to display on screen
+var_score_to_display_offset=$0921
+
+; Index of the lowest high score
 var_lowest_high_score_index=$0923
 
+; Repeating block of 6 bytes for the monster information
+; higher memory values are index using X e.g. 
+;    LDA    var_monster_active_status,X
+; 
+; Theoretically could be 20 of these blocks without hitting
+; other used parts of memory but the most on a map are 3
+;
+; Monster X co-ordinate 
 var_monster_xpos=$0980
+
+; Monster Y co-ordinate
 var_monster_ypos=$0981
+
+; Monster X co-ordinate jitter/movement
 var_monster_xpos_jitter=$0982
+
+; Monster Y co-ordinate jitter/movement
 var_monster_ypos_jitter=$0983
+
+; When the egg breaks, count down to zero for how many times
+; around the game loop to show the cracked egg
+;
+; When the monster spawns, count down to zero for how many times
+; around the game loop to show the monster standing still
 var_monster_wait_counter=$0984
+
+; Is this monster slot being used? 
 var_monster_active_status=$0985
 
+; Did the player press the restart key - used to avoid showing the 
+; high score screen
 var_restart_pressed=$09FC
+
+; Which note to play out of the 256 in the main in-game music sequance
 var_note_sequence_number=$09FE
+
+; Speed at which to play the music - will only play on the nth VSYNC
 var_music_rate_cycle=$09FF
 
 .main_code_block_start
@@ -418,11 +1237,11 @@ INCLUDE "repton-main-music.asm"
         ; to $0D90
         ; Set the MSB
         LDA     #HI(fn_enable_timer_2)
-        STA     eventv_msb_vector
+        STA     EVENTV_MSB
 
         ; Set the LSB
         LDA     #LO(fn_enable_timer_2)
-        STA     eventv_lsb_vector
+        STA     EVENTV_LSB
 
         ; OSBYTE &0D 
         ; Enable VSYNC event ($04) - event is generated
@@ -434,9 +1253,9 @@ INCLUDE "repton-main-music.asm"
 
 ;0D6A
 .fn_disable_vsync_event
-        ; TODO Not sure what this does yet
+        ; Set the number of screen iterations for the dissolve
+        ; effect - defaults to 14
         LDA     #$0E
-        ; 72
         STA     zp_dissolve_screen_iterations
 
         ; Allow maskable interrupts
@@ -499,15 +1318,11 @@ INCLUDE "repton-main-music.asm"
 
         ; Set to counter to $09D0 / 2512
         ; 
-        ; Timer 2 is decremented at 1Mhz so timer will
-        ; create an event 398 times a second OR 
-        ; TODO
-        ; if this is a one shot timer then called very 
-        ; 2.512 milliseconds
-        ; 1,000,000 / 2512 = 398
+        ; Timer 2 is decremented at 1Mhz and believe
+        ; this is a "one shot" timer. 
         ;
         ; $D0 is written to the latch first
-        ; When $09 is written to the high order coutner
+        ; When $09 is written to the high order counter
         ; the low order latch is transferred to the low
         ; order counter
         ;
@@ -565,7 +1380,7 @@ INCLUDE "repton-main-music.asm"
         ; current position
         ;    X will contain the LSB for the screen address
         ;    Y will contain the MSB for the screen address
-        JSR     fn_calc_screen_address_from_x_y_pos
+        JSR     fn_calc_screen_address_from_x_y
 
         ; Wait for vsync before continuing
         JMP     fn_wait_for_vertical_sync
@@ -614,11 +1429,11 @@ INCLUDE "repton-main-music.asm"
         ; stored at $0DC0
         ; Set the LSB to the string
         LDA     #LO(text_out_of_time)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the MSB to the string
         LDA     #HI(text_out_of_time)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Set the cursor position to (09,19)
         LDX     #$09
@@ -817,24 +1632,44 @@ INCLUDE "repton-main-music.asm"
         EQUB    $06
 
 ;0E60
-; TODO EXPLAIN THESE
 .data_screen_character_lookup_table
+        ; ASCII characters between 23 and 127 are 
+        ; looked up here to find which image to display
+        ; for the character e.g. a maps to 
+        ; when the are put on the screen;
+        ;
+        ; There are 95 character mappings (as below)
+        ; and some are defined as mini map characters
+        ; e.g. a small egg or fuzzy earth. All printable
+        ; ones e.g. a-z and A-Z and 0-9 are mapped to 
+        ; single byte width font characters
+
+        ;       Spc  !   "   #   $   %   &   ' 
         EQUB    $73,$BC,$BD,$69,$BF,$BE,$75,$73
+        ;        (   )   *   +   ,   -   .   /
         EQUB    $62,$63,$C7,$73,$C3,$6C,$C2,$71
+        ;        0   1   2   3   4   5   6   7
         EQUB    $5C,$5D,$5E,$5F,$60,$61,$84,$85
+        ;        8   9   :   ;   <   =   >   ?
         EQUB    $86,$87,$C1,$6B,$66,$C6,$67,$74
+        ;        @   A   B   C   D   E   F   G
         EQUB    $73,$88,$89,$8A,$8B,$8C,$8D,$8E
+        ;        H   I   J   K   L   M   N   O
         EQUB    $8F,$90,$91,$92,$93,$94,$95,$96
+        ;        P   Q   R   S   T   U   V   W
         EQUB    $97,$98,$99,$9A,$9B,$9C,$9D,$9E
+        ;        X   Y   Z   [   \   ]   ^   _           
         EQUB    $9F,$A0,$A1,$C4,$72,$C5,$70,$6C
-;0EA0        
+        ;        `   a   b   c   d   e   f   g     
         EQUB    $76,$A2,$A3,$A4,$A5,$A6,$A7,$A8
+        ;        h   i   j   k   l   m   n   o
         EQUB    $A9,$AA,$AB,$AC,$AD,$AE,$AF,$B0
-;0EB0
+        ;        p   q   r   s   t   u   v   w 
         EQUB    $B1,$B2,$B3,$B4,$B5,$B6,$B7,$B8
+        ;        x   y   z   {   |   }   ~        
         EQUB    $B9,$BA,$BB,$64,$6E,$65,$6D
 ;0EBF       
-.data_mini_map_chararacters 
+.data_mini_map_characters 
         ; Object id to mini-map characters lookup table
         ; Object id is the nth position in the table
         ;
@@ -885,7 +1720,7 @@ INCLUDE "repton-main-music.asm"
         ; or just the higher bits ($F0) to choose the colour
         EQUB    $00,$0F,$F0,$FF
 
-; 0EE3
+;0EE3
 .text_by_superior_software
         EQUS    "By",$82," Superior Software",$0D
 ;0EF9
@@ -1132,11 +1967,11 @@ INCLUDE "repton-main-music.asm"
         ; stored at $2D00
         ; Set the LSB to the string        
         LDA     #HI(text_congrats_enter_name)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Set the MSB to the string        
         LDA     #LO(text_congrats_enter_name)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Write string to screen
         JSR     fn_write_string_to_screen
@@ -1174,19 +2009,16 @@ INCLUDE "repton-main-music.asm"
         ; S   = Starting value in $0902
         ; R   =  Random value result
         ;
-        ; R = ((S + T1H) EOR T1C) + 2 * ((S + T1H) EOR T1C)
+        ; In BASIC (Note S starting value can be anything) it
+        ; becomes the slightly more complex
         ;
-        ; or more simply
-        ; TODO doesn't look at carry flag
-        ;
-        ; R = 3 * ((S + T1H) EOR T1C)
-        ;
-        ; In BASIC (Note S starting value can be anything)
-        ;
-        ; 10 S = 20
+        ; 10 S = 0: Y=0: X=0
         ; 20 T1H = ?&FE65
         ; 30 T1C = ?&FE64
-        ; 40 R = 3 * ((S + T1H) EOR T1C)
+        ; 40 X = ((S + T1H) EOR T1C) AND 255
+        ; 50 Y = (X * 2) AND 255
+        ; 60 IF X AND 128 THEN Y = (Y + 1) AND 255      
+        ; 80 R = (X + Y) AND 255
         ; 50 PRINT ~R
         ; 60 GOTO 20
         ;
@@ -1195,7 +2027,6 @@ INCLUDE "repton-main-music.asm"
         EOR     SHEILA_USER_VIA_R5_T1C_L
         STA     var_random_value
         ROL     A
-        ADC     var_random_value
         STA     var_random_value
 
         ; Note that $0902 is never read outside
@@ -1353,7 +2184,7 @@ INCLUDE "repton-main-music.asm"
         JMP     OSWRCH
 
 ;10B1
-.fn_calc_screen_address_from_x_y_pos
+.fn_calc_screen_address_from_x_y
         ; Screen is from $6000 - $7FFF
         ; Screen write address = screen start adress + (xpos * 8) + (y *256)
         ; On entry:
@@ -1380,14 +2211,14 @@ INCLUDE "repton-main-music.asm"
         ; Add Y to the MSB and any carry flag
         ADC     zp_screen_start_address_msb
         ; If the screen address is < $7FFF then we're doing
-        BPL     end_calc__screen_address_from_x_y_pos
+        BPL     end_calc__screen_address_from_x_ypos
 
         ; Screen address is > $7FFF so wrap it to the
         ; start of the screen my subtracting $2000
         SEC
         SBC     #$20
 ;10C1
-.end_calc__screen_address_from_x_y_pos
+.end_calc__screen_address_from_x_ypos
         TAY
         RTS
 
@@ -1474,9 +2305,7 @@ INCLUDE "repton-main-music.asm"
         ; Change logical colour 3 to cyan
         JSR     fn_disable_vsync_create_map_colours
 
-        ; Set current tile position?
-        ; X 76 
-        ; Y 77>
+        ; Start at (0,0) on the map
         LDA     #$00
         STA     zp_map_x
         STA     zp_map_y
@@ -1503,7 +2332,6 @@ INCLUDE "repton-main-music.asm"
         ; Rock or Earth or Egg or solid wall etc
         ; Loop through them all and draw them to the 
         ; screen 
-
         LDX     zp_map_x
         LDY     zp_map_y
 
@@ -1705,7 +2533,7 @@ INCLUDE "repton-main-music.asm"
 ;11AE
 .loop_get_next_string_byte
         LDY     zp_string_to_display_current_byte
-        LDA     (zp_object_or_string_address_lsb),Y
+        LDA     (zp_string_read_address_lsb),Y
 
         ; Carriage return indicates end of string
         ; so end if we find one
@@ -1771,7 +2599,7 @@ INCLUDE "repton-main-music.asm"
         ; Reset the screen x cursor position to zero
         LDA     #$00
         STA     zp_password_cursor_xpos
-        JMP     move_to_next_y_pos
+        JMP     move_to_next_ypos
 
 ;11CB
 .check_if_delete_character
@@ -1798,7 +2626,6 @@ INCLUDE "repton-main-music.asm"
         JSR     fn_print_character_to_screen
 
         ; Decrement the cursor position 
-        ; TODO - why again?
         DEC     zp_password_cursor_xpos
         JMP     end_print_character_to_screen
 
@@ -1845,12 +2672,12 @@ INCLUDE "repton-main-music.asm"
         SBC     #$20
         TAX
 
-        ; Lookup the tile in position 0 to 127
+        ; Lookup the tile in position 0 to 95
         LDA     data_screen_character_lookup_table,X
         JSR     fn_write_tile_to_screen
 
-.L11FC
-.move_to_next_x_pos
+;11FC
+.move_to_next_xpos
         ; Note that each row is 32 characters wide
         ; if we exceed we reset to zero and increnemt
         ; the ypos (next row)
@@ -1863,7 +2690,7 @@ INCLUDE "repton-main-music.asm"
         LDA     #$00
         STA     zp_password_cursor_xpos
 ;1208
-.move_to_next_y_pos
+.move_to_next_ypos
         INC     zp_password_cursor_ypos
         LDA     zp_password_cursor_ypos
 
@@ -1892,7 +2719,7 @@ INCLUDE "repton-main-music.asm"
         JSR     fn_write_tile_to_screen
 
         ; Increment the xpos
-        JMP     move_to_next_x_pos
+        JMP     move_to_next_xpos
 
 ;121E
 .fn_check_if_score_update_or_key
@@ -1989,7 +2816,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Lookup the object at this map position
         ; On return A will contain the object id
-        ; zp_object_or_string_address_lsb/msb will
+        ; zp_map_or_object_address_lsb/msb will
         ; contain the address on the current map
         ; where the object is referenced
         JSR     fn_lookup_screen_object_for_x_y
@@ -2023,6 +2850,7 @@ INCLUDE "repton-main-music.asm"
         ; A     - set to the amplitude
         ; X     - set to the pitch (note)
         ; Y     - set to the duration
+        ; SOUND &13,1,200,1
         ; Use Envelope 1
         LDA     #$01
         ; Just below C#5
@@ -2035,7 +2863,7 @@ INCLUDE "repton-main-music.asm"
         LDY     #$00
 ;127C
 .check_earth
-        LDA     (zp_object_or_string_address_lsb),Y
+        LDA     (zp_map_or_object_address_lsb),Y
 
         ; Any type of earth scores 1 point
         ; So check if repton scooped up some
@@ -2044,46 +2872,48 @@ INCLUDE "repton-main-music.asm"
 
         ; If < $18 branch ahead
         CMP     #$18
-        BCC     L128B
+        BCC     check_if_key
 
         ; if >=  $1B branch ahead
         CMP     #$1B
-        BCS     L128B
+        BCS     check_if_key
 
         ; Add 1 to the score
         LDA     #$01
         JSR     fn_add_to_score
 
-.L128B
+;128B
+.check_if_key
         ; Check to see if Repton picked up a key
         ; by looking up the object at the current position
         ; on the map
-        LDA     (zp_object_or_string_address_lsb),Y
+        LDA     (zp_map_or_object_address_lsb),Y
         CMP     #$1B
         ; If it wasn't a key branch ahead
-        BNE     L12A6
+        BNE     end_update_score_and_check_if_a_safe
 
         ; Repton picked up a key
 
         ; Cache the object map position
-        LDA     zp_object_or_string_address_lsb
-        STA     zp_object_or_string_address_lsb_cache
-        LDA     zp_object_or_string_address_msb
-        STA     zp_object_or_string_address_msb_cache
+        LDA     zp_map_or_object_address_lsb
+        STA     zp_map_or_object_address_lsb_cache
+        LDA     zp_map_or_object_address_msb
+        STA     zp_map_or_object_address_msb_cache
 
         ; Change all the safes to diamonds
         JSR     fn_change_safes_to_diamonds
 
         ; Restore the object map position
-        LDA     zp_object_or_string_address_lsb_cache
-        STA     zp_object_or_string_address_lsb
-        LDA     zp_object_or_string_address_msb_cache
-        STA     zp_object_or_string_address_msb
+        LDA     zp_map_or_object_address_lsb_cache
+        STA     zp_map_or_object_address_lsb
+        LDA     zp_map_or_object_address_msb_cache
+        STA     zp_map_or_object_address_msb
         LDY     #$00
-.L12A6
+;12A6
+.end_update_score_and_check_if_a_safe
         ; Restore whatever was in A
         PLA
-        STA     (zp_object_or_string_address_lsb),Y
+        STA     (zp_map_or_object_address_lsb),Y
         RTS        
 
 ;12AA
@@ -2107,7 +2937,7 @@ INCLUDE "repton-main-music.asm"
         ; Lookup the object at the (x,y)
         ; on the current map 
         ; On return A will contain the object id on return
-        ; zp_object_or_string_address_lsb/msb will
+        ; zp_map_or_object_address_lsb/msb will
         ; contain the address on the current map
         ; where the object is referenced
         LDX     zp_map_x_for_safe_change
@@ -2126,7 +2956,7 @@ INCLUDE "repton-main-music.asm"
         ; instead of a safe
         LDY     #$00
         LDA     #$1E
-        STA     (zp_object_or_string_address_lsb),Y
+        STA     (zp_map_or_object_address_lsb),Y
 
         ; Translate x from a 32x32 lookup to
         ; the 128x128 xpos tile lookup on the map
@@ -2160,7 +2990,7 @@ INCLUDE "repton-main-music.asm"
         ; display on the screen
         LDY     zp_map_ypos_for_safe_change
         LDX     zp_map_xpos_for_safe_change
-        ; Calculates zp_object_or_string_address_lsb/msb too
+        ; Calculates zp_map_or_object_address_lsb/msb too
         JSR     fn_lookup_screen_tile_for_xpos_ypos
 
         ; Display the tile on the screen (if it's visible)
@@ -2196,7 +3026,9 @@ INCLUDE "repton-main-music.asm"
 
         RTS        
 
-.L12F6
+
+;12F6
+.fn_check_if_rock_egg_falling_and_move_it
         ; Routine checks to see if a rock or egg
         ; is falling and moves it 
         LDA     #$1E
@@ -2204,7 +3036,8 @@ INCLUDE "repton-main-music.asm"
         LDA     #$1F
         STA     zp_map_x_for_rock_drop
 
-        ; Start
+        ; Start in the bottom right corner of the map
+        ; one row up (rocks on the bottom row can't drop)
         LDA     #$DF
         STA     zp_object_index_lsb
         LDA     #$07
@@ -2388,9 +3221,9 @@ INCLUDE "repton-main-music.asm"
         ; which is the first tile at the start
         ; of the data tiles
         LDA     #LO(data_tiles)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
         LDA     #HI(data_tiles)
-        STA     zp_source_tile_msb
+        STA     zp_sprite_tiles_read_address_msb
 
         ; Retrieve the cached object id for the object
         ; that is dropping
@@ -2405,7 +3238,7 @@ INCLUDE "repton-main-music.asm"
         ; It's an egg
         ; So update to $2FE0
         LDA     #LO(data_tiles_egg)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
 ;137F
 .draw_egg_or_rock
         ; Draw the egg or rock on the screen
@@ -2686,14 +3519,14 @@ INCLUDE "repton-main-music.asm"
         ASL     A
         TAY
 
-       ; Set the data tile location to the 
+        ; Set the data tile location to the 
         ; be the first tile of the rock
         ; which is the first tile at the start
         ; of the data tiles
         LDA     #HI(data_tiles)
-        STA     zp_source_tile_msb        
+        STA     zp_sprite_tiles_read_address_msb        
         LDA     #LO(data_tiles)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
 
         ; Retrieve the cached object id for the object
         ; that is dropping
@@ -2708,7 +3541,7 @@ INCLUDE "repton-main-music.asm"
         ; It's an egg so point at the egg graphic
         ; So update to $2FE0
         LDA     #LO(data_tiles_egg)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
 
 ;1432
 .draw_egg_or_rock_for_drop
@@ -2879,9 +3712,9 @@ INCLUDE "repton-main-music.asm"
         ; which is the first tile at the start
         ; of the data tiles
         LDA     #HI(data_tiles)
-        STA     zp_source_tile_msb        
+        STA     zp_sprite_tiles_read_address_msb        
         LDA     #LO(data_tiles)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
 
         ; Retrieve the cached object id for the object
         ; that is dropping
@@ -2896,7 +3729,7 @@ INCLUDE "repton-main-music.asm"
         ; It's an egg so point at the egg graphic
         ; So update to $2FE0
         LDA     #LO(data_tiles_egg)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
 
 ;1493
 .draw_egg_or_rock_and_check_if_killed
@@ -3076,7 +3909,7 @@ INCLUDE "repton-main-music.asm"
         ;    is being crushed by a rock
         ; ---------------------------------------------
 
-        ; Add 3 to the monster's xpos to see what if 
+        ; Add 3 to the monster's xpos to see if 
         ; it's right had edge is being crushed by a rock
         LDX     zp_monster_number 
         LDA     var_monster_ypos,X
@@ -3129,6 +3962,7 @@ INCLUDE "repton-main-music.asm"
         STX     zp_monster_x
         ; Bug? Looks like it should be STY not LDY
         ; Y is already loaded with the 32x32 monster ypos
+;151B
         LDY     zp_monster_y
 
         ; Lookup the object the is at (x,y+1) held 
@@ -3203,9 +4037,9 @@ INCLUDE "repton-main-music.asm"
         ; Set the source graphic to be a rock (the 
         ; first data tile)
         LDA     #HI(data_tiles)
-        STA     zp_source_tile_msb
+        STA     zp_sprite_tiles_read_address_msb
         LDA     #LO(data_tiles)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
 
         ; Convert X into 128x128 by multipying
         ; by 4 and store in X
@@ -3237,7 +4071,8 @@ INCLUDE "repton-main-music.asm"
 ;155A
 .check_monster_active
         ; Find the first empty monster slot (can be 
-        ; a maximum of 4 active monsters). A monster
+        ; a maximum of 3 active monsters - no level
+        ; contains more than that). A monster
         ; is active when $0985 + (n * $06) is set to $01
         ; where n is the nth monster slot
         ; but the slot is available for use when it's $00
@@ -3792,9 +4627,9 @@ INCLUDE "repton-main-music.asm"
         ; Add the offset if any to the monster left hand up sprite
         CLC
         ADC     #LO(sprite_monster_left_hand_up)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
         LDA     #HI(sprite_monster_left_hand_up)
-        STA     zp_source_tile_msb
+        STA     zp_sprite_tiles_read_address_msb
 
         ; Get the monster's top left ypos
         LDY     var_monster_ypos,X
@@ -3825,9 +4660,9 @@ INCLUDE "repton-main-music.asm"
 
         ; Set the source sprite to be the cracked egg
         LDA     #HI(sprite_cracked_egg)
-        STA     zp_source_tile_msb
+        STA     zp_sprite_tiles_read_address_msb
         LDA     #LO(sprite_cracked_egg)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
 
         ; Get the nth monster's xpos and ypos
         ; on the 128x128 map grid - nth is passed in X
@@ -3858,9 +4693,9 @@ INCLUDE "repton-main-music.asm"
         ; Set the source sprite to be the monster
         ; standing
         LDA     #HI(sprite_monster_standing)
-        STA     zp_source_tile_msb
+        STA     zp_sprite_tiles_read_address_msb
         LDA     #LO(sprite_monster_standing)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
 
         ; Get the nth monster's xpos and ypos
         ; on the 128x128 map grid - nth is passed in X
@@ -4056,7 +4891,9 @@ INCLUDE "repton-main-music.asm"
         ; Pitch/White noise to 4
         ; Duration to 2
         ;
-        ; Maybe changed laet in development?
+        ; SOUND &E0, 31, 4,2
+        ;
+        ; Maybe changed late in development?
         LDY     #$02
         JSR     fn_play_music_sound
 
@@ -4126,19 +4963,19 @@ INCLUDE "repton-main-music.asm"
         ; Next string to write to the screen is 
         ; stored at $2CD4                
         LDA     #LO(text_r_to_restart)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
         LDA     #HI(text_r_to_restart)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
 
-;17A8g
+;17A8
 .fn_set_press_escape_lsb
         ; Set the LSB for the "Press escape to
         ; kill yourself" string
         LDA     #LO(text_press_escape)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
         RTS
 
         ; Spare bytes - 2
@@ -4206,7 +5043,7 @@ INCLUDE "repton-main-music.asm"
         ; "By, Superior Software"
         ; Set the LSB to the string
         LDA     #LO(text_by_superior_software)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the cursor poxition to (5,8)
         ; to position it below the repton logo
@@ -4215,7 +5052,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Set the MSB to the string
         LDA     #HI(text_by_superior_software)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -4227,14 +5064,14 @@ INCLUDE "repton-main-music.asm"
         ; stored at $0EF9
         ; Set the LSB to the string
         LDA     #LO(text_score)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the cursor poxition to (11,10)
         LDX     #$0B
         LDY     #$0A
         ; Set the MSB to the string
         LDA     #HI(text_score)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -4243,7 +5080,7 @@ INCLUDE "repton-main-music.asm"
         ; stored at $0F02 and is "Hi-Score :"
         ; Set the LSB to the string
         LDA     #LO(text_hi_score)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the cursor position to (8,12)
         LDX     #$08
@@ -4251,7 +5088,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Set the MSB to the string
         LDA     #HI(text_hi_score)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
         JSR     fn_write_string_to_screen
 
         ;-----------------------------------
@@ -4261,7 +5098,7 @@ INCLUDE "repton-main-music.asm"
         ; stored at $0F0D and is "Time :"
         ; Set the LSB to the string
         LDA     #LO(text_time)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the cursor position to (12,14)
         LDX     #$0C
@@ -4269,7 +5106,7 @@ INCLUDE "repton-main-music.asm"
         
         ; Set the MSB to the string
         LDA     #HI(text_time)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -4281,7 +5118,7 @@ INCLUDE "repton-main-music.asm"
         ; stored at $0F14
         ; Set the LSB to the string
         LDA     #LO(text_lives)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the cursor position to (11,16)
         LDX     #$0B
@@ -4289,7 +5126,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Set the MSB to the string
         LDA     #HI(text_lives)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -4298,7 +5135,7 @@ INCLUDE "repton-main-music.asm"
         ; stored at $0F1C and is "Diamonds :"
         ; Set the LSB to the string
         LDA     #LO(text_diamonds)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the cursor position to (8,18)
         LDX     #$08
@@ -4306,7 +5143,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Set the MSB to the string
         LDA     #HI(text_diamonds)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -4318,7 +5155,7 @@ INCLUDE "repton-main-music.asm"
         ; stored at $0F27 
         ; Set the LSB to the string
         LDA     #LO(text_screen)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the cursor position to (10,20)
         LDX     #$0A
@@ -4326,7 +5163,7 @@ INCLUDE "repton-main-music.asm"
         
         ; Set the MSB to the string
         LDA     #HI(text_screen)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -4338,7 +5175,7 @@ INCLUDE "repton-main-music.asm"
         ; stored at $0F3F 
         ; Set the LSB to the string
         LDA     #LO(text_sound)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the cursor position to (11,22)
         LDX     #$0B
@@ -4346,7 +5183,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Set the MSB of the string
         LDA     #HI(text_sound)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the "Sound :", "Music :" and 
         ; "Password :" strings to the screen
@@ -4355,6 +5192,10 @@ INCLUDE "repton-main-music.asm"
         ; here!
         JSR     fn_write_sound_music_password_to_screen
 
+        ; Depending on if this is the new game screen
+        ; or the status string, show the Password or
+        ; Restart text - note this also sets the LSB
+        ; for the escape string
         JSR     fn_display_p_or_r_option
 
         ;-----------------------------------
@@ -4362,16 +5203,18 @@ INCLUDE "repton-main-music.asm"
         ;-----------------------------------
         ; Next string to write to the screen is 
         ; stored at $0F54
-        ; zp_string_to_display is set to 54 in the above?         
+        ; 
+        ; zp_string_read_address_lsb is set to $54
+        ; above in fn_display_p_or_r_option
         NOP
+
         ; Set the cursor position to (2,28)
         LDX     #$02
         LDY     #$1C
 
         ; Set the MSB of the string
-        ; No TODO LSB set?!!? SET BREAKPOINT
-        LDA     #HI(text_press_return)
-        STA     zp_object_or_string_address_msb
+        LDA     #HI(text_press_escape)
+        STA     zp_string_read_address_msb
         JSR     fn_write_string_to_screen
 
         ;-----------------------------------
@@ -4381,15 +5224,15 @@ INCLUDE "repton-main-music.asm"
         ; stored at $0F75
         ; Set the LSB to the string
         LDA     #LO(text_press_return)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the cursor position to (2,20)
         LDX     #$02
         LDY     #$1D
-.L1863
+;1863
         ; Set the MSB of the string
         LDA     #HI(text_press_return)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -4401,7 +5244,7 @@ INCLUDE "repton-main-music.asm"
         ; stored at $0F96
         ; Set the LSB to the string
         LDA     #LO(text_press_space)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
         
         ; Set the cursor position to (2,21)
         LDX     #$02
@@ -4409,7 +5252,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Set the MSB to the string
         LDA     #HI(text_press_space)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the string
         JSR     fn_write_string_to_screen
@@ -4592,7 +5435,7 @@ INCLUDE "repton-main-music.asm"
         ; and show the password screen if it was - only 
         ; if a game has not yet been started.  Also calls
         ; the routine to check the r, d, w keys
-        JSR     fn_check_p_key
+        JSR     fn_check_p_r_d_w_keys
 
         ; Check to see if the player has 
         ; pressed the space bar to start or return
@@ -4661,12 +5504,12 @@ INCLUDE "repton-main-music.asm"
         ; As it's Repton's position (14,14)
         LDX     #$0E
         LDY     #$0E
-        JSR     fn_calc_screen_address_from_x_y_pos
+        JSR     fn_calc_screen_address_from_x_y
 
         ; Store the screen address where Repton should
         ; be removed
-        STX     zp_tile_load_address_lsb
-        STY     zp_tile_load_address_msb
+        STX     zp_target_screen_address_lsb
+        STY     zp_target_screen_address_msb
 
         ; Repton is made of 4 vertical body parts
         ;    Head   
@@ -4680,7 +5523,7 @@ INCLUDE "repton-main-music.asm"
         ; Used to iterate through the body parts
         ; hence 4 
         LDA     #$04
-        STA     zp_sprite_parts_to_copy_or_blank
+        STA     zp_sprite_tiles_to_copy_or_blank
 ;1986
 .loop_blank_next_tile_byte_reset
         ; Y is used to blank all the horizontal
@@ -4695,7 +5538,7 @@ INCLUDE "repton-main-music.asm"
 .loop_blank_next_tile_byte
         ; Blank a byte of data on the screen
         LDA     #$00
-        STA     (zp_tile_load_address_lsb),Y
+        STA     (zp_target_screen_address_lsb),Y
 
         ; Each tile is 8 bytes high so blank each 
         ; byte of the tile (loop until done)
@@ -4708,11 +5551,11 @@ INCLUDE "repton-main-music.asm"
         ; by 8 bytes
         TYA
         CLC
-        ADC     zp_tile_load_address_lsb
+        ADC     zp_target_screen_address_lsb
 
         ; Add the carry to the MSB (if any)
         LDA     #$00
-        ADC     zp_tile_load_address_msb
+        ADC     zp_target_screen_address_msb
 
         ; Check still less than $8000
         ; if it is then branch
@@ -4720,10 +5563,10 @@ INCLUDE "repton-main-music.asm"
 
         ; Subtract $2000 from the screen address
         ; to wrap around to the start of screen memory
-        LDA     zp_tile_load_address_msb
+        LDA     zp_target_screen_address_msb
         SEC
         SBC     #$20
-        STA     zp_tile_load_address_msb
+        STA     zp_target_screen_address_msb
 ;19A5
 .skip_memory_subtraction_for_blank
         ; Check if 4 columns of 8 bytes have been blanked
@@ -4735,18 +5578,18 @@ INCLUDE "repton-main-music.asm"
         BNE     loop_blank_next_tile_byte
 
         ; Increment to the next screen write address byte
-        INC     zp_tile_load_address_msb
-        LDA     zp_tile_load_address_msb
+        INC     zp_target_screen_address_msb
+        LDA     zp_target_screen_address_msb
         BPL     skip_memory_subtraction_for_blank_2
 
         ; Subtract $2000 from the screen address
         ; to wrap around to the start of screen memory
         SEC
         SBC     #$20
-        STA     zp_tile_load_address_msb
+        STA     zp_target_screen_address_msb
 ;19B5
 .skip_memory_subtraction_for_blank_2
-        DEC     zp_sprite_parts_to_copy_or_blank
+        DEC     zp_sprite_tiles_to_copy_or_blank
         BNE     loop_blank_next_tile_byte_reset
 
         RTS
@@ -4773,9 +5616,9 @@ INCLUDE "repton-main-music.asm"
         ; $0F - Small explosion
         LDX     var_repton_animation_state
         LDA     data_repton_pose_lookup_table_lsb,X
-        STA     zp_screen_write_address_lsb
+        STA     zp_sprite_tiles_read_address_lsb
         LDA     data_repton_pose_lookup_table_msb,X
-        STA     zp_screen_write_address_msb
+        STA     zp_sprite_tiles_read_address_msb
         JMP     fn_display_sprite
 
 ;19CA
@@ -4783,7 +5626,7 @@ INCLUDE "repton-main-music.asm"
         ; Each sprite is 4 bytes wide and 32 bytes high
         ; 4 * 32 = 128 bytes
         ; 
-        ; (lookup address) is stored in zp_screen_write_address_lsb/msb
+        ; (lookup address) is stored in zp_sprite_tiles_read_address_lsb/msb
         ;
         ; Each sprite is split into four vertical parts:
         ; - Head
@@ -4805,17 +5648,16 @@ INCLUDE "repton-main-music.asm"
         ; As it's Repton's position (14,14)
         LDX     #$0E
         LDY     #$0E
-        JSR     fn_calc_screen_address_from_x_y_pos
+        JSR     fn_calc_screen_address_from_x_y
 
         ; Store the screen address where Repton should
         ; be drawn
-        ; TODO resolvename of load vs screen in this fn
-        STX     zp_tile_load_address_lsb
-        STY     zp_tile_load_address_msb
+        STX     zp_target_screen_address_lsb
+        STY     zp_target_screen_address_msb
 
         ; Repton is made of four body parts (see above)
         LDA     #$04
-        STA     zp_sprite_parts_to_copy_or_blank
+        STA     zp_sprite_tiles_to_copy_or_blank
 ;19D9
 .copy_4_same_row_tiles_to_screen
         ; Y is used to copy all the horizontal
@@ -4829,8 +5671,8 @@ INCLUDE "repton-main-music.asm"
         ; Copy 8 bytes
 .loop_copy_next_tile_byte
         ; Copy a byte of data to the screen
-        LDA     (zp_screen_write_address_lsb),Y
-        STA     (zp_tile_load_address_lsb),Y
+        LDA     (zp_sprite_tiles_read_address_lsb),Y
+        STA     (zp_target_screen_address_lsb),Y
 
         ; Each tile is 8 bytes high so copy them all
         INY
@@ -4842,11 +5684,11 @@ INCLUDE "repton-main-music.asm"
         ; by 8 bytes
         TYA
         CLC
-        ADC     zp_tile_load_address_lsb
+        ADC     zp_target_screen_address_lsb
 
         ; Add the carry to the MSB (if any)
         LDA     #$00
-        ADC     zp_tile_load_address_msb
+        ADC     zp_target_screen_address_msb
 
         ; Check still less than $8000
         ; if it is then branch
@@ -4854,10 +5696,10 @@ INCLUDE "repton-main-music.asm"
 
         ; Subtract $2000 from the screen address
         ; to wrap around to the start of screen memory
-        LDA     zp_tile_load_address_msb
+        LDA     zp_target_screen_address_msb
         SEC
         SBC     #$20
-        STA     zp_tile_load_address_msb
+        STA     zp_target_screen_address_msb
 ;19F8
 .skip_memory_subtraction
         ; Check if 4 columns of 8 bytes have been copied
@@ -4869,32 +5711,32 @@ INCLUDE "repton-main-music.asm"
         BNE     loop_copy_next_tile_byte
 
         ; Next body part is $140 higher in memory
-        ; so add this t the current read memory location
+        ; so add this t0 the current read memory location
         ; this represents a complete body part or sprite part
         ;  e.g. head or feet or part of a diamond
         ; + $0140 bytes
-        LDA     zp_screen_write_address_lsb
+        LDA     zp_sprite_tiles_read_address_lsb
         CLC
         ADC     #$40
-        STA     zp_screen_write_address_lsb
-        LDA     zp_screen_write_address_msb
+        STA     zp_sprite_tiles_read_address_lsb
+        LDA     zp_sprite_tiles_read_address_msb
         ADC     #$01
-        STA     zp_screen_write_address_msb
+        STA     zp_sprite_tiles_read_address_msb
 
         ; Increment to the next screen write address byte
-        INC     zp_tile_load_address_msb
-        LDA     zp_tile_load_address_msb
+        INC     zp_target_screen_address_msb
+        LDA     zp_target_screen_address_msb
         BPL     skip_memory_subtraction_2
 
         ; Subtract $2000 from the screen address
         ; to wrap around to the start of screen memory
         SEC
         SBC     #$20
-        STA     zp_tile_load_address_msb
+        STA     zp_target_screen_address_msb
 ;1A15
 .skip_memory_subtraction_2
         ; Any remaining sprite parts? If so loop back
-        DEC     zp_sprite_parts_to_copy_or_blank
+        DEC     zp_sprite_tiles_to_copy_or_blank
         BNE     copy_4_same_row_tiles_to_screen
 
         RTS        
@@ -5012,7 +5854,7 @@ INCLUDE "repton-main-music.asm"
         BEQ     end_draw_or_blank_object
 
         ; Default width and height of an object in tiles
-        ; Gets adjusted in a workign copy for objects 
+        ; Gets adjusted in a working copy for objects 
         ; only partially on screen
         LDA     #$04
         STA     zp_object_width_default_counter
@@ -5094,11 +5936,11 @@ INCLUDE "repton-main-music.asm"
         ; tile to get to the nth tile of this object's
         ; horizontal row first
         CLC
-        ADC     zp_source_tile_lsb
-        STA     zp_source_tile_lsb
-        LDA     zp_source_tile_msb
+        ADC     zp_sprite_tiles_read_address_lsb
+        STA     zp_sprite_tiles_read_address_lsb
+        LDA     zp_sprite_tiles_read_address_msb
         ADC     #$00
-        STA     zp_source_tile_msb
+        STA     zp_sprite_tiles_read_address_msb
 
         ; Set X to 4 now so when it's DEC 4 times
         ; it goes to zero
@@ -5135,13 +5977,13 @@ INCLUDE "repton-main-music.asm"
         ; start at the right partial part of the object
         ; Do the LSB first
         CLC
-        ADC     zp_source_tile_lsb
-        STA     zp_source_tile_lsb
+        ADC     zp_sprite_tiles_read_address_lsb
+        STA     zp_sprite_tiles_read_address_lsb
 
         ; Do the MSB additions
         LDA     data_partial_sprite_offset_lookup_msb,Y
-        ADC     zp_source_tile_msb
-        STA     zp_source_tile_msb
+        ADC     zp_sprite_tiles_read_address_msb
+        STA     zp_sprite_tiles_read_address_msb
 
         ; Set Y to 4 now so when it's DEC'd 4 times it
         ; goes to zero
@@ -5164,7 +6006,7 @@ INCLUDE "repton-main-music.asm"
         ; blanked or have the rock or egg or monster
         ; written to it
         ; X and Y are the (x,y) pos?
-        JSR     fn_calc_screen_address_from_x_y_pos
+        JSR     fn_calc_screen_address_from_x_y
 
         ; Screen write address LSB
         STX     zp_target_screen_address_lsb
@@ -5201,7 +6043,7 @@ INCLUDE "repton-main-music.asm"
         ; the screen rather than moving on screen 
         ; from one position to another (as it's already
         ; been blanked at this point)
-        LDA     (zp_source_tile_lsb),Y
+        LDA     (zp_sprite_tiles_read_address_lsb),Y
         STA     (zp_target_screen_address_lsb),Y
 
         ; Have all 8 bytes of the current tile
@@ -5244,13 +6086,13 @@ INCLUDE "repton-main-music.asm"
         ; Move to the next row tile of the source object 
         ; by adding $140 to the address (each next object
         ; part is $140 higher in memory)
-        LDA     zp_source_tile_lsb
+        LDA     zp_sprite_tiles_read_address_lsb
         CLC
         ADC     #$40
-        STA     zp_source_tile_lsb
-        LDA     zp_source_tile_msb
+        STA     zp_sprite_tiles_read_address_lsb
+        LDA     zp_sprite_tiles_read_address_msb
         ADC     #$01
-        STA     zp_source_tile_msb
+        STA     zp_sprite_tiles_read_address_msb
 
         ; Increment the target screen address
         ; (each row on the screen is $FF/256 bytes)
@@ -5265,7 +6107,7 @@ INCLUDE "repton-main-music.asm"
         ; as subtracting $20 from the MSB
         SEC
         SBC     #$20
-        STA     zp_tile_load_address_msb
+        STA     zp_target_screen_address_msb
 ;1AE4
 .check_if_all_rows_copied
         ; Move onto the next sprite row
@@ -5409,7 +6251,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Give the MSB of the screen start
         ; address divided by 8
-        LDA     zp_screen_write_address_msb
+        LDA     zp_screen_start_address_msb_div8
         STA     SHEILA_6845_DATA
 
         ; Set 6845 Register to 13
@@ -5417,7 +6259,7 @@ INCLUDE "repton-main-music.asm"
         ; address divided by 8        
         LDA     #$0D
         STA     SHEILA_6845_ADDRESS
-        LDA     zp_screen_write_address_lsb
+        LDA     zp_screen_start_address_lsb_div8
         STA     SHEILA_6845_DATA
 
         ; Return
@@ -5483,8 +6325,8 @@ INCLUDE "repton-main-music.asm"
 
         ; Cache the xpos and ypos as X and Y
         ; get used for during processing
-        STX     zp_tile_x_pos_cache
-        STY     zp_tile_y_pos_cache
+        STX     zp_tile_xpos_cache
+        STY     zp_tile_ypos_cache
 
         ; If X is > 126 ($7F) use the 
         ; default off-screen tile
@@ -5530,7 +6372,7 @@ INCLUDE "repton-main-music.asm"
 
 
         LDA     #$00
-        STA     zp_object_or_string_address_msb
+        STA     zp_map_or_object_address_msb
 
 
         ; Each row is 32 characters wide so ypos
@@ -5542,9 +6384,9 @@ INCLUDE "repton-main-music.asm"
         ASL     A
         ASL     A
         ; Put any carry in to the MSB
-        ROL     zp_object_or_string_address_msb
+        ROL     zp_map_or_object_address_msb
         ASL     A
-        ROL     zp_object_or_string_address_msb
+        ROL     zp_map_or_object_address_msb
 
         ; Add on the (xpos / 4) calculated earlier
         ; so it's at the right offset in the table
@@ -5552,15 +6394,15 @@ INCLUDE "repton-main-music.asm"
         ADC     zp_general_xpos_lookup_calcs
 
         ; Store the table position         
-        STA     zp_object_or_string_address_lsb
-        LDA     zp_object_or_string_address_msb
+        STA     zp_map_or_object_address_lsb
+        LDA     zp_map_or_object_address_msb
         
         ; Add $0400 as the table is stored at $0400-$04FF
         ; Tile can be retrieved from this address held in 
         ; LSB / MSB
         CLC
         ADC     #$04
-        STA     zp_object_or_string_address_msb
+        STA     zp_map_or_object_address_msb
         ; End map object lookup table calculation
         ; (object not looked up yet)
         ; ------------------------------------
@@ -5610,7 +6452,7 @@ INCLUDE "repton-main-music.asm"
         ; the address calculated in the first calculation
         ; in this subroutine
         LDY     #$00
-        LDA     (zp_object_or_string_address_lsb),Y
+        LDA     (zp_map_or_object_address_lsb),Y
 
         ; Move the object to Y
         TAY
@@ -5618,7 +6460,7 @@ INCLUDE "repton-main-music.asm"
         ; Reset the MSB as another address calculation 
         ; is about to performed to be performed
         LDX     #$00
-        STX     zp_object_or_string_address_msb
+        STX     zp_map_or_object_address_msb
 
         ; Retrieve again the object at this (xpos, ypos)
         ; which was cached just earlier in Y
@@ -5634,38 +6476,39 @@ INCLUDE "repton-main-music.asm"
         ASL     A
         ASL     A
         ASL     A
-        ROL     zp_object_or_string_address_msb
-        STA     zp_object_or_string_address_lsb
+        ROL     zp_map_or_object_address_msb
+        STA     zp_map_or_object_address_lsb
 
         ; Multiply the y part by 4 to get to the nth row of the sprite
         LDA     zp_general_ypos_lookup_calcs
         ASL     A
         ASL     A
 
-        ; Add on the xpart to get to the right column
+        ; Add on the x part to get to the right column
         CLC
-        ADC     zp_object_or_string_address_lsb
-        ; TODO check equation above is correct
+        ADC     zp_map_or_object_address_lsb
+
+        ; Add the y part
         ADC     zp_general_xpos_lookup_calcs
-        STA     zp_object_or_string_address_lsb
-        LDA     zp_object_or_string_address_msb
+        STA     zp_map_or_object_address_lsb
+        LDA     zp_map_or_object_address_msb
 
         ; Add $4000 which is the starting point for the sprites
         ORA     #$40
-        STA     zp_object_or_string_address_msb
+        STA     zp_map_or_object_address_msb
         ; ------------------------------------
 
-        ; Reloaad the xpos
-        LDX     zp_tile_x_pos_cache
+        ; Reload the xpos
+        LDX     zp_tile_xpos_cache
 
         ; Reset Y and load the sprite part tile
         LDY     #$00
-        LDA     (zp_object_or_string_address_lsb),Y
+        LDA     (zp_map_or_object_address_lsb),Y
 
         ; PHA/PLA seem redundant?
         PHA
         ; Reload the ypos
-        LDY     zp_tile_y_pos_cache
+        LDY     zp_tile_ypos_cache
         PLA
 
         ; A contains the sprite tile part for the
@@ -5678,23 +6521,20 @@ INCLUDE "repton-main-music.asm"
         ; if beyond the end of a row or beyond
         ; the last row on the screen
         LDA     #$E0
-        STA     zp_object_or_string_address_lsb
-        STA     zp_object_or_string_address_msb
+        STA     zp_map_or_object_address_lsb
+        STA     zp_map_or_object_address_msb
         LDA     #$16
         RTS
 
 
 ;1BBD
 .fn_lookup_screen_object_for_x_y
-        ; TODO  change the STX/STY variable names
-        ; to x and y not x_pos/y_pos
-
         ; Looks up object using (x,y) not (xpos,ypos)
         ; i.e. 32 x 32 co-ordinates
         ; Cache the x and y as the code
         ; uses the X and Y registers
-        STX     zp_tile_x_pos_cache
-        STY     zp_tile_y_pos_cache
+        STX     zp_tile_x_cache
+        STY     zp_tile_y_cache
 
         ; Check the end ofthe row hasn't been reach
         ; it's 32 characters wide then abort
@@ -5707,7 +6547,7 @@ INCLUDE "repton-main-music.asm"
         BCS     set_default_off_screen_object
 
         LDA     #$00
-        STA     zp_object_or_string_address_msb
+        STA     zp_map_or_object_address_msb
         ; Calculate the tile cache for (xpos,ypos)
         ; Screen map tiles cached at $0400
         ;
@@ -5725,32 +6565,32 @@ INCLUDE "repton-main-music.asm"
         ASL     A
         ASL     A
         ASL     A
-        ROL     zp_object_or_string_address_msb
+        ROL     zp_map_or_object_address_msb
         ASL     A
-        ROL     zp_object_or_string_address_msb
+        ROL     zp_map_or_object_address_msb
 
         ; Add X to the LSB (will never carry)
-        ORA     zp_tile_x_pos_cache
-        STA     zp_object_or_string_address_lsb
+        ORA     zp_tile_x_cache
+        STA     zp_map_or_object_address_lsb
 
         ; Add $0400 to the address by adding
         ; $04 to the MSB
-        LDA     zp_object_or_string_address_msb
+        LDA     zp_map_or_object_address_msb
         ORA     #$04
-        STA     zp_object_or_string_address_msb
+        STA     zp_map_or_object_address_msb
 
         ; Load the object for this (x,y) from
         ; the current screen cache that starts at $0400
         LDY     #$00
-        LDA     (zp_object_or_string_address_lsb),Y
+        LDA     (zp_map_or_object_address_lsb),Y
 
         ; Reset the X and Y registers 
         ; NOTE pushing then pulling A onto the
         ; stack is redundant as LDX/LDY doesn't
         ; change A
         PHA
-        LDX     zp_tile_x_pos_cache
-        LDY     zp_tile_y_pos_cache
+        LDX     zp_tile_x_cache
+        LDY     zp_tile_y_cache
         PLA
         RTS
 
@@ -5775,7 +6615,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Get the mini-map character id to use
         ; for the current object id
-        LDA     data_mini_map_chararacters,X
+        LDA     data_mini_map_characters,X
 
         ; Restore the x coordinate
         LDX     zp_map_x_cache
@@ -5827,7 +6667,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Calculate the screen address from the x position
         ; and y position (which are up to 32 x 32 in value)
-        JSR     fn_calc_screen_address_from_x_y_pos
+        JSR     fn_calc_screen_address_from_x_y
 
         ; Store the calculated screen address
         STX     zp_screen_write_address_lsb
@@ -5839,7 +6679,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Rest the MSB of tile load address
         LDA     #$00
-        STA     zp_tile_load_address_msb
+        STA     zp_tile_read_address_msb
 
         ; Retrieve the tile to write to the screen
         PLA
@@ -5849,19 +6689,19 @@ INCLUDE "repton-main-music.asm"
 
         ; Multiply by 8
         ASL     A
-        ROL     zp_tile_load_address_msb
+        ROL     zp_tile_read_address_msb
         ASL     A
-        ROL     zp_tile_load_address_msb
+        ROL     zp_tile_read_address_msb
         ASL     A
-        ROL     zp_tile_load_address_msb
+        ROL     zp_tile_read_address_msb
 
         ; Add $2FC0
         CLC
         ADC     #LO(data_tiles)
-        STA     zp_tile_load_address_lsb
-        LDA     zp_tile_load_address_msb
+        STA     zp_tile_read_address_lsb
+        LDA     zp_tile_read_address_msb
         ADC     #HI(data_tiles)
-        STA     zp_tile_load_address_msb
+        STA     zp_tile_read_address_msb
 
         ; Copy the tile to the screen (each tile is 8 bytes)
         LDY     #$07
@@ -5870,7 +6710,7 @@ INCLUDE "repton-main-music.asm"
         ; Copy the tile to the screen
         ; Each tile is 8 bytes so loop to copy 
         ; them all
-        LDA     (zp_tile_load_address_lsb),Y
+        LDA     (zp_tile_read_address_lsb),Y
         STA     (zp_screen_write_address_lsb),Y
         DEY
         ; If still more to copy then loop
@@ -5888,7 +6728,7 @@ INCLUDE "repton-main-music.asm"
         ; and y position (which are up to 32 x 32 in value)
         LDX     zp_password_cursor_xpos
         LDY     zp_password_cursor_ypos
-        JSR     fn_calc_screen_address_from_x_y_pos
+        JSR     fn_calc_screen_address_from_x_y
 
         ; Store the calculated screen address
         STX     zp_screen_write_address_lsb
@@ -5896,7 +6736,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Rest the MSB of tile load address
         LDA     #$00
-        STA     zp_tile_load_address_msb
+        STA     zp_tile_read_address_msb
 
         ; Retrieve the tile to write to the screen
         PLA
@@ -5904,24 +6744,24 @@ INCLUDE "repton-main-music.asm"
         ; Calculate tile load address
         ; Tile load address = (tile number * 8) + $2FC0
         ASL     A
-        ROL     zp_tile_load_address_msb
+        ROL     zp_tile_read_address_msb
         ASL     A
-        ROL     zp_tile_load_address_msb
+        ROL     zp_tile_read_address_msb
         ASL     A
-        ROL     zp_tile_load_address_msb
+        ROL     zp_tile_read_address_msb
         CLC
         ADC     #LO(data_tiles)
-        STA     zp_tile_load_address_lsb
-        LDA     zp_tile_load_address_msb
+        STA     zp_tile_read_address_lsb
+        LDA     zp_tile_read_address_msb
         ADC     #HI(data_tiles)
-        STA     zp_tile_load_address_msb
+        STA     zp_tile_read_address_msb
 
         ; Copy the tile to the screen (each tile is 8 bytes)
         LDY     #$07
 ;1C61
 .loop_get_next_tile_byte
         ; Get the yth byte of the tile
-        LDA     (zp_tile_load_address_lsb),Y
+        LDA     (zp_tile_read_address_lsb),Y
         ; Mask out the colour - values are either $00, $0F, $F0 or $FF
         ; In mode 5, the screen is 2 bits per pixel
         ; with the bits in the same position in the 
@@ -6004,7 +6844,7 @@ INCLUDE "repton-main-music.asm"
         ; Need to update the bottom row to contain the
         ; new tiles - there are 32 of these
         LDA     #$20
-        STA     zp_sprite_parts_to_copy_or_blank
+        STA     zp_sprite_tiles_to_copy_or_blank
 ;1C90
 .loop_add_new_screen_bottom_tiles
         ; Lookup the tile that should be shown in this
@@ -6022,7 +6862,7 @@ INCLUDE "repton-main-music.asm"
 
         ; If there are any more tiles to copy
         ; to the bottom row of the screen then loop
-        DEC     zp_sprite_parts_to_copy_or_blank
+        DEC     zp_sprite_tiles_to_copy_or_blank
         BNE     loop_add_new_screen_bottom_tiles
 
         ; Return
@@ -6092,7 +6932,7 @@ INCLUDE "repton-main-music.asm"
         ; Need to update the top bottom row to contain the
         ; new tiles - there are 32 of these
         LDA     #$20
-        STA     zp_sprite_parts_to_copy_or_blank
+        STA     zp_sprite_tiles_to_copy_or_blank
 
 ;1CC4
 .loop_add_new_screen_top_tiles
@@ -6111,7 +6951,7 @@ INCLUDE "repton-main-music.asm"
 
         ; If there are any more tiles to copy
         ; to the top row of the screen then loop        
-        DEC     zp_sprite_parts_to_copy_or_blank
+        DEC     zp_sprite_tiles_to_copy_or_blank
         BNE     loop_add_new_screen_top_tiles
 
         ; Return
@@ -6203,11 +7043,11 @@ INCLUDE "repton-main-music.asm"
         STA     zp_cached_object_id
 
         ; Cache repton's screen address position lsb
-        LDA     zp_object_or_string_address_lsb
+        LDA     zp_map_or_object_address_lsb
         STA     zp_map_object_update_lsb
 
         ; Cache repton's screen address position msb
-        LDA     zp_object_or_string_address_msb
+        LDA     zp_map_or_object_address_msb
         STA     zp_map_object_update_msb
 
         ; -----------------------------------------------------
@@ -6274,7 +7114,7 @@ INCLUDE "repton-main-music.asm"
         ; $000A contains the address of the 
         ; map location that is to the left of repton
         LDY     #$00
-        STA     (zp_object_or_string_address_lsb),Y
+        STA     (zp_map_or_object_address_lsb),Y
 
         ; Update the current map cache to put an
         ; empty space ($1F) where the rock or egg
@@ -6326,9 +7166,9 @@ INCLUDE "repton-main-music.asm"
         ; which is the first tile at the start
         ; of the data tiles
         LDA     #LO(data_tiles)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
         LDA     #HI(data_tiles)
-        STA     zp_source_tile_msb
+        STA     zp_sprite_tiles_read_address_msb
 
         ; Is it a rock or an egg that's moving? 
         ; If a rock then branch ahead        
@@ -6340,7 +7180,7 @@ INCLUDE "repton-main-music.asm"
         ; set the lsb to be the egg's first tile 
         ; instead of the rock
         LDA     #LO(data_tiles_egg)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
 ;1D51
 .draw_egg_or_rock_to_left
         ; Draw the egg or rock on the screen
@@ -6432,7 +7272,7 @@ INCLUDE "repton-main-music.asm"
         ; Need to update the left hand column contain the
         ; new tiles - there are 32 of these
         LDA     #$20
-        STA     zp_sprite_parts_to_copy_or_blank
+        STA     zp_sprite_tiles_to_copy_or_blank
 ;1D7F
 .loop_add_new_screen_left_tiles
         ; Lookup the tile that should be shown in this
@@ -6450,7 +7290,7 @@ INCLUDE "repton-main-music.asm"
 
         ; If there are any more tiles to copy
         ; to the bottom row of the screen then loop
-        DEC     zp_sprite_parts_to_copy_or_blank
+        DEC     zp_sprite_tiles_to_copy_or_blank
         BNE     loop_add_new_screen_left_tiles
 
         ; Return
@@ -6547,10 +7387,10 @@ INCLUDE "repton-main-music.asm"
         ; right - can only happen if there is 
         ; empy space to the right of the rock or egg
 
-        LDA     zp_object_or_string_address_lsb
+        LDA     zp_map_or_object_address_lsb
         STA     zp_map_object_update_lsb
 
-        LDA     zp_object_or_string_address_msb
+        LDA     zp_map_or_object_address_msb
         STA     zp_map_object_update_msb
 
         ; -----------------------------------------------------
@@ -6615,7 +7455,7 @@ INCLUDE "repton-main-music.asm"
         ; Update the current map cache to push the
         ; rock or egg one position right
         LDY     #$00
-        STA     (zp_object_or_string_address_lsb),Y
+        STA     (zp_map_or_object_address_lsb),Y
 
         ; Update the current map cache to put an
         ; empty space where the rock or egg
@@ -6664,9 +7504,9 @@ INCLUDE "repton-main-music.asm"
         ; which is the first tile at the start
         ; of the data tiles
         LDA     #LO(data_tiles)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
         LDA     #HI(data_tiles)
-        STA     zp_source_tile_msb
+        STA     zp_sprite_tiles_read_address_msb
 
         ; Is it a rock or an egg that's moving? 
         ; If a rock then branch ahead
@@ -6678,7 +7518,7 @@ INCLUDE "repton-main-music.asm"
         ; set the lsb to be the egg's first tile 
         ;  instead of the rock
         LDA     #LO(data_tiles_egg)
-        STA     zp_source_tile_lsb
+        STA     zp_sprite_tiles_read_address_lsb
 
 ;1E0A
 .draw_egg_or_rock_to_right
@@ -6758,7 +7598,7 @@ INCLUDE "repton-main-music.asm"
         ; Need to update the right hand column contain the
         ; new tiles - there are 32 of these
         LDA     #$20
-        STA     zp_sprite_parts_to_copy_or_blank
+        STA     zp_sprite_tiles_to_copy_or_blank
 
 ;1E3B
 .loop_add_new_screen_right_tiles
@@ -6777,7 +7617,7 @@ INCLUDE "repton-main-music.asm"
 
         ; If there are any more tiles to copy
         ; to the bottom row of the screen then loop
-        DEC     zp_sprite_parts_to_copy_or_blank
+        DEC     zp_sprite_tiles_to_copy_or_blank
         BNE     loop_add_new_screen_right_tiles
 
         ; Return
@@ -6797,8 +7637,8 @@ INCLUDE "repton-main-music.asm"
         ; contain the YXth bit that needs to be
         ; retrieved
         ;
-        ;    zp_object_index_lsb_cache - 0072
-        ;    zp_object_index_msb_cache - 0073
+        ;    zp_required_map_bit_lsb   - 0070
+        ;    zp_required_map_bit_msb   - 0071
         ;
         ; This routine takes the relative bit offset and 
         ; works out which relative byte offset containst
@@ -6809,29 +7649,29 @@ INCLUDE "repton-main-music.asm"
         ;
         ; Byte address = (relative bit offset / 8) + $4200
         ;
-        STX     zp_starting_bit_offset_lsb_cache
-        STY     zp_starting_bit_offset_msb_cache
+        STX     zp_required_map_bit_lsb
+        STY     zp_required_map_bit_msb
 
         ; To calculate which byte this is in,
         ; divide the number of bits by 8 and throw
         ; away the remainder
         ;
         ; Relative byte offset = nth bit / 8
-        LSR     zp_starting_bit_offset_msb_cache
-        ROR     zp_starting_bit_offset_lsb_cache
-        LSR     zp_starting_bit_offset_msb_cache
-        ROR     zp_starting_bit_offset_lsb_cache
-        LSR     zp_starting_bit_offset_msb_cache
-        ROR     zp_starting_bit_offset_lsb_cache
+        LSR     zp_required_map_bit_msb
+        ROR     zp_required_map_bit_lsb
+        LSR     zp_required_map_bit_msb
+        ROR     zp_required_map_bit_lsb
+        LSR     zp_required_map_bit_msb
+        ROR     zp_required_map_bit_lsb
 
         ; Load the relative byte offset
-        LDA     zp_starting_bit_offset_msb_cache
+        LDA     zp_required_map_bit_msb
 
         ; Add $4200 to it (all compressed map info
         ; starts at this address)
         CLC
         ADC     #$42
-        STA     zp_starting_bit_offset_msb_cache
+        STA     zp_required_map_bit_msb
 
 
         LDY     #$00
@@ -7082,22 +7922,23 @@ INCLUDE "repton-main-music.asm"
 
         ; A at this point will contain the current screen
         ;
-        ; Multiply the current screen by 4
+        ; Multiply the current screen by 4 as it's used
+        ; as the offset to find the encoded map data for
+        ; the current level
         ASL     A
         ASL     A
 
-        ; Store in 78   
+        ; Store the MSB offset for the encoded map
         STA     zp_nth_object_index_msb
 
-        ; Reset 77 80 and the number of 
-        ; diamonds left
+        ; Reset various variables below
         LDA     #$00
 
-        ; 
+        ; Set the LSB offset for the encoded map
         STA     zp_nth_object_index_lsb
 
         ; Counter used to loop 256 times 
-        STA     zp_decode_map_counter_lsb
+        STA     zp_decoded_map_counter_lsb
 
         ; Reset the number of diamonds left to
         ; collect to zero - they will be counted as
@@ -7107,7 +7948,7 @@ INCLUDE "repton-main-music.asm"
         ; Counter used to loop 4 times on top of the 256 times
         ; to get all 1024 (4 x 256) objects
         LDA     #$04
-        STA     zp_decode_map_counter_msb
+        STA     zp_decoded_map_counter_msb
 ;1ED3
 .get_and_decode_nth_map_object
         ; Get the nth object from the encoded (compressed)
@@ -7120,7 +7961,7 @@ INCLUDE "repton-main-music.asm"
         ; Set the current screen map cache (0400-07FF)
         ; to tbe the looked up object
         LDY     #$00
-        STA     (zp_current_map_cache_lsb),Y
+        STA     (zp_decoded_map_counter_lsb),Y
 
         ; If the current object is a Diamond ($1E)
         ; increment the number of diamonds to collect
@@ -7153,17 +7994,17 @@ INCLUDE "repton-main-music.asm"
         ; A map contains 1024 object ids - these are
         ; retrieved by iterating over 4 * 256 object ids
         ; 
-        ; The zp_decode_map_counter_lsb loops 0-255 inclusive
-        ; The zp_decode_map_counter_msb loops 4-7 inclusive
+        ; The zp_decoded_map_counter_lsb loops 0-255 inclusive
+        ; The zp_decoded_map_counter_msb loops 4-7 inclusive
         ;
         ; Get and decode the current 256 object ids and 
         ; copy into $0400-$04FF - if all 256 have been
         ; retrieved then increment the MSB
-        INC     zp_decode_map_counter_lsb
+        INC     zp_decoded_map_counter_lsb
         BNE     skip_decode_map_counter_msb_increment
 
         ; Increment the MSB
-        INC     zp_decode_map_counter_msb
+        INC     zp_decoded_map_counter_msb
 ;1EF8
 .skip_decode_map_counter_msb_increment
         ; Have all 1024 map object ids been retrieved
@@ -7171,33 +8012,34 @@ INCLUDE "repton-main-music.asm"
         ;
         ; Have 4*256 iterations been performed?
         ; (Remember starts at $04)
-        LDA     zp_decode_map_counter_msb
+        LDA     zp_decoded_map_counter_msb
         CMP     #$08
         ; Not all have been retrieved so loop back
         ; and get the rest
         BNE     get_and_decode_nth_map_object
 
-        ; Reset $0980-$09FF to zero
+        ; Reset $0980-$09EF to zero
         LDX     #$10
-        ; TODO give this label a better name
+
 ;1F00
-.reset_monster_cache
+.loop_reset_monster_data_cache
         ; Set current byte to zero
         LDA     #$00
 
         ; Bug? Should this have started at $0980
-        ; where the monster data is held? Would finish
-        ; at $09FF too
+        ; where the monster data is held?
         ; 
-        ; $0970 - $097F never appears to be used
-        ; $0980 - $0997 monster cache
-        ; $0998 - $09EF no used by game!
+        ; $0970 - $097F never appears to be used by game
+        ; $0980 - $0991 monster data cache
+        ; $0992 - $09EF not used by game as maps have a maximum of 3 monsters!
+        ; 
+        ; Possibly earlier iterations had more monsters on maps?
 
         STA     $0970,X
         ; Move to next byte and loop
         ; back if more to reset
         INX
-        BPL     reset_monster_cache
+        BPL     loop_reset_monster_data_cache
 
         RTS
 
@@ -7373,7 +8215,7 @@ INCLUDE "repton-main-music.asm"
 
         ; Set the top 3 bits always (so randomness is)
         ; is just with the 5th bit and result will be 
-        ; 1111 0000 or 1110 0000
+        ; 1111 0000 ($F0) or 1110 0000 (E0)
         ORA     #$E0
 
         ; Store the MSB which will be used as the source
@@ -7381,7 +8223,7 @@ INCLUDE "repton-main-music.asm"
         STA     zp_random_byte_source_msb
 
         ; Generate another random number for the LSB
-        ; address which will be either $E0xx or TODO
+        ; address which will be the xx in either $E0xx or $F0xx
         JSR     fn_generate_random_number
 
         STA     zp_random_byte_source_lsb
@@ -7530,7 +8372,8 @@ INCLUDE "repton-main-music.asm"
         LDA     #$0A
         STA     var_repton_animation_state
 
-        ; TODO
+        ; Reset the main loop counter and the
+        ; retpon idle counter
         LDA     #$00
         STA     var_main_loop_counter
         STA     var_repton_idle_counter
@@ -7661,13 +8504,6 @@ INCLUDE "repton-main-music.asm"
 
 ;206E
 .main_game_loop
-
-        ; TODO
-        ; This map be checking to see if repton 
-        ; is moving at the moment up or down or
-        ; during an animation frame - difficult to 
-        ; tell from reading the code
-
         ; Check to see if the x position is in 
         ; at the start of a 32x32 grid position
         ; (remember ypos is 0 to 127) so mask
@@ -7677,7 +8513,6 @@ INCLUDE "repton-main-music.asm"
         LDA     zp_visible_screen_top_left_xpos
         CLC
 
-        ; TODO Check this
         ; Add 2 because the starting top left is 
         ; (2,2) to show half a sprite on the top,
         ; left, right and bottom margins - so to 
@@ -7687,7 +8522,7 @@ INCLUDE "repton-main-music.asm"
 
         ; If it's not aligned to a 32x32 grid position
         ; branch
-        BNE     L2086
+        BNE     check_if_repton_moving_up
 
         ; Check to see if the y position is in 
         ; at the start of a 32x32 grid position
@@ -7706,7 +8541,7 @@ INCLUDE "repton-main-music.asm"
 
         ; If it's not alinged to a 32x32 grid position
         ; branch        
-        BNE     L2086
+        BNE     check_if_repton_moving_up
 
         ; Spare bytes - 3
         NOP
@@ -7719,9 +8554,11 @@ INCLUDE "repton-main-music.asm"
         ; Also checks if repton is idle
         JSR     fn_check_repton_movement
 
-.L2086
+;2086
+.check_if_repton_moving_up
         ; Clear Binary Coded Decimal mode
         CLD
+
         ; Is the player trying to move repton
         ; vertically?  If not, branch ahead
         LDA     var_repton_vertical_direction
@@ -7750,7 +8587,7 @@ INCLUDE "repton-main-music.asm"
         ; Is the player trying to move repton
         ; horizontally?  If not, branch ahead
         LDA     var_repton_horizontal_direction
-        BEQ     L20A7
+        BEQ     check_vertical_movement
 
         ; Is the player trying to move Repton right?
         ; If so branch ahead
@@ -7759,14 +8596,15 @@ INCLUDE "repton-main-music.asm"
         ; Move repton left
         JSR     fn_move_repton_left
 
-        JMP     L20A7
+        JMP     check_vertical_movement
 
 ;20A4
 .move_repton_to_right
         ; Move repton right
         JSR     fn_move_repton_right
 
-.L20A7
+;20A7
+.check_vertical_movement
         ; Allow maskable interrupts
         CLI
 
@@ -7774,7 +8612,7 @@ INCLUDE "repton-main-music.asm"
         ; vertically?  If not, branch ahead
         ; Otherwise work out the animation state
         LDA     var_repton_vertical_direction        
-        BEQ     L20B6
+        BEQ     check_repton_horizontal_direction
 
         ; Vertical animation state is calculated from 
         ; the top left ypos of the screen
@@ -7796,7 +8634,8 @@ INCLUDE "repton-main-music.asm"
         AND     #$01
         STA     var_repton_animation_state
 
-.L20B6
+;20B6
+.check_repton_horizontal_direction
         ; Horizontal animation state is calculated from 
         ; the top left xpos of the screen and there
         ; are four possible animation sprites for moving left
@@ -7829,7 +8668,7 @@ INCLUDE "repton-main-music.asm"
         LDA     var_repton_horizontal_direction
 
         ; No left/right movement so branch ahead
-        BEQ     L20D2
+        BEQ     check_if_repton_idle
 
         ; Player moving Repton right so branch to that
         ; code
@@ -7843,7 +8682,7 @@ INCLUDE "repton-main-music.asm"
         ; Store this as the current repton sprite
         ; so it will be drawn on the screen
         STA     var_repton_animation_state
-        JMP     L20D2
+        JMP     check_if_repton_idle
 
 ;20CC
 .find_moving_right_sprite
@@ -7856,15 +8695,16 @@ INCLUDE "repton-main-music.asm"
         ; so it will be drawn on the screen        
         STA     var_repton_animation_state
 
-.L20D2
+;20D2
+.check_if_repton_idle
         ; Check to see if the the player was 
         ; moving repton either vertically or horizontally
         LDA     var_repton_vertical_direction
         ORA     var_repton_horizontal_direction
 
-        ; If player was moving Repton was moving 
+        ; If player was moving Repton 
         ; vertically or horizontally then branch ahead
-        BNE     L20E5
+        BNE     reset_idle_counter
 
         ; Player was not trying to move Repton
         ; Check to see if Repton has been idle
@@ -7875,23 +8715,25 @@ INCLUDE "repton-main-music.asm"
         ; stood still for 127 checks around this
         ; loop so branch ahead and get the standing
         ; still icons
-        BMI     L20ED
+        BMI     find_repton_idle_sprite
 
         ; No player requested movement so increment
         ; the number of times through this routine
         ; that Repton has been idle
         INC     var_repton_idle_counter
-        JMP     L2100
+        JMP     check_if_key_picked_up
 
-.L20E5
+;20E5
+.reset_idle_counter
         ; Reset the idle counter as
         ; player requested movement was
         ; detected
         LDA     #$00
         STA     var_repton_idle_counter
-        JMP     L2100
+        JMP     check_if_key_picked_up
 
-.L20ED
+;20ED
+.find_repton_idle_sprite
         ; There is a main loop counter that 
         ; is incremeneted each time around the
         ; main game loop - it's used here to 
@@ -7925,7 +8767,8 @@ INCLUDE "repton-main-music.asm"
         ; Draw the repton standing idle sprite on the screen
         JSR     fn_lookup_repton_sprite_and_display
 
-.L2100
+;2100
+.check_if_key_picked_up
         ; Switch off Binary Coded Decimal mode
         CLD
 
@@ -7940,9 +8783,9 @@ INCLUDE "repton-main-music.asm"
 
         ; A is not used here in this sub-routine either
 
-        ; Check if Repton has picked up 
-        ; a diamond or earth or a key
-        JSR     L12F6
+        ; Check to see if any rocks or eggs are falling
+        ; and move them
+        JSR     fn_check_if_rock_egg_falling_and_move_it
 
         ; Setting A does nothing in the next sub-routine
         ; it's cached and restored at the end
@@ -8371,9 +9214,9 @@ INCLUDE "repton-music-intro-notes.asm"
 
         ; Set the string to write to "By, Superior Software"
         LDA     #LO(text_by_superior_software)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
         LDA     #HI(text_by_superior_software)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Display the string
         JSR     fn_write_string_to_screen
@@ -8382,9 +9225,9 @@ INCLUDE "repton-music-intro-notes.asm"
         LDX     #$04
         LDY     #$1D
         LDA     #LO(text_press_space_bar_to_play)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
         LDA     #HI(text_press_space_bar_to_play)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Display the string
         JSR     fn_write_string_to_screen
@@ -8428,8 +9271,8 @@ INCLUDE "repton-music-intro-notes.asm"
 
 ;2346
 .display_next_high_score_pos
-        ; TODO Improve commenting
-        
+        ; Set the x position of the cursor to 0 
+        ; (left edge of screen)
         LDA     #$00
         STA     zp_password_cursor_xpos
 
@@ -8437,17 +9280,26 @@ INCLUDE "repton-music-intro-notes.asm"
         LDA     #$F0
         STA     zp_screen_colour_mask
 
+        ; Calculate y position of the cursor 
+        ; (left edge of screen) based on the high
+        ; score position that is being displayed
+        ; Each score is displayed on alternate lines going
+        ; down the screen from the 10th line onwards
+        ; 
         ; ypos = (zero based high score position * 2) + 10
         LDA     var_score_index
         ASL     A
         ADC     #$0A
         STA     zp_password_cursor_ypos
 
-        
+        ; Reload the high score position
         LDA     var_score_index
         CLC
 
-        ; Write the high score position start at 1 
+        ; Write the high score position - start at 1 
+        ; which is ASCII $31 - when var_score_index
+        ; incremenets this goes to ASCII $32 (2) then $33 (3)
+        ; etc 
         ; to the screen for each high score
         ADC     #$31
         JSR     fn_print_character_to_screen  
@@ -8466,9 +9318,9 @@ INCLUDE "repton-music-intro-notes.asm"
 
         ; Write the "Last Score : " string to the screen
         LDA     #LO(text_last_score)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
         LDA     #HI(text_last_score)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ;  Set cursor position to (8,26)
         LDY     #$1A
@@ -8712,7 +9564,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ; 
         ; Assume all names are in the same page
         LDA     #HI(data_high_score_names)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Set the LSB of the player name to display
         ; LSB = (offset * 8) + $18
@@ -8726,7 +9578,7 @@ INCLUDE "repton-music-intro-notes.asm"
         ASL     A
         ASL     A
         ADC     #$18
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set cursor position to (10, ypos)
         ; Work out the screen row number
@@ -8880,7 +9732,7 @@ INCLUDE "repton-music-intro-notes.asm"
 .fn_disable_vsync_event_and_change_palette
         ; Disable the VSYNC event
         JSR     fn_disable_vsync_event
-        ; Reset the colour paletete and change
+        ; Reset the colour palette and change
         ; logical colour 1 depending on the level
         JMP     fn_set_palette_to_default_with_screen_lookup_colour
         
@@ -8898,9 +9750,9 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Otherwise, password is invalid
         ; Set the string to "Password not recognised"
         LDA     #HI(text_passwd_not_recognised)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
         LDA     #LO(text_passwd_not_recognised)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set cursor position to (4,12)
         LDX     #$04
@@ -8917,14 +9769,14 @@ INCLUDE "repton-music-intro-notes.asm"
         ; only the MSB) here, LSB is set after
         ; return
         LDA     #HI(text_screen_matched)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
         RTS
 
 ;2544
 .text_passwd_not_recognised
         EQUS    "Password not recognised",$0D
 
-;255c
+;255C
 .fn_reset_start_and_started_on_screen
         ; If the screen number is already positive
         ; then do nothing otherwise reset to zero
@@ -9111,11 +9963,11 @@ INCLUDE "repton-music-intro-notes.asm"
 
         ; Set the MSB of the string
         LDA     #HI(text_p_to_enter_password)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Set the LSB of the string
         LDA     #LO(text_p_to_enter_password)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Display the spring and set the LSB for the
         ; next string to write to be the Press escape to kill yourself
@@ -9130,7 +9982,7 @@ INCLUDE "repton-music-intro-notes.asm"
         NOP
 
 ;L25F9
-.fn_check_p_key
+.fn_check_p_r_d_w_keys
         ; Check to see if the player has 
         ; asked for the music to be switched 
         ; on or off or pressed restart
@@ -9171,8 +10023,23 @@ INCLUDE "repton-music-intro-notes.asm"
         ; Reset the game to a new game
         JSR     fn_reset_game
 
-        ; TODO No idea what's on the stack at this point
-        ; but it's cleared and thrown away
+        ; Seems a hack...
+        ; 
+        ; Removes one JSR return address 
+        ;
+        ; Stack at this point contains return addresses
+        ; for two Jump to Sub-routines (JSR) operands
+        ; 2. 
+        ; $FE / $FF = $2036 which called fn_display_repton_start_screen
+        ; $FC / $FD = $194C which called fn_check_p_r_d_w_keys
+        ; 
+        ; Tim obviously didn't want it to continue processing 
+        ; the start screen key presses from $194D 
+        ; after the RTS so that key press loop return address
+        ; is removed from the stack with the two PLAs below - it 
+        ; will instead return to $2037 onwards which starts 
+        ; a new game
+        ; 
         PLA
         PLA
 
@@ -9223,7 +10090,7 @@ INCLUDE "repton-music-intro-notes.asm"
         NOP
         NOP
 
-; 2640
+;2640
 .fn_game_start
         ; Reset the time remaining to $60xx
         LDA     #$60
@@ -9497,18 +10364,18 @@ INCLUDE "repton-has-been-finished.asm"
         LDX     #$0A
         LDY     #$1E
         LDA     #HI(text_screen_complete_press_space)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
         LDA     #LO(text_screen_complete_press_space)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
         JSR     fn_write_string_to_screen
 
         ; Write "Amazing!  Now try again." at (0,16)
         LDX     #$00
         LDY     #$10
         LDA     #HI(text_screen_complete_amazing)
-        STA     zp_object_or_string_address_msb
+        STA     zp_map_or_object_address_msb
         LDA     #LO(text_screen_complete_amazing)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_map_or_object_address_lsb
 
         ; Check to see if this was a play through
         ; from screen 0 if it wasn't then change
@@ -9519,7 +10386,7 @@ INCLUDE "repton-has-been-finished.asm"
         ; Player didn't start on screen 0 so tell them
         ; to do it again from screen 0
         LDA     #LO(text_screen_complete_well_done)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 ;2A9D
 .display_complete_string
         JSR     fn_write_string_to_screen
@@ -9726,9 +10593,9 @@ INCLUDE "repton-has-been-finished.asm"
 
         ; Set the string to "Enter Password"
         LDA     #LO(text_enter_password)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
         LDA     #HI(text_enter_password)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the string to the screen
         JSR     fn_write_string_to_screen
@@ -9828,7 +10695,7 @@ INCLUDE "repton-has-been-finished.asm"
         ; if not, routine below will display
         ; "password not recognised"
         ; If it did match, routine will set MSB
-        ; of zp_object_or_string_address_msb to $2
+        ; of zp_string_read_address_msb $2
         JSR     fn_check_if_password_match
 
         ; Spare byte
@@ -9838,7 +10705,7 @@ INCLUDE "repton-has-been-finished.asm"
         ; Set the string to display to $2D40
         ; MSB was set in previous routine
         LDA     #$40
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the cursor to (11,16)
         LDX     #$0B
@@ -9874,13 +10741,13 @@ INCLUDE "repton-has-been-finished.asm"
 .text_r_to_restart 
 
         EQUS    $81,"Press ",$82,"R ",$81,"to restart    ",$0D,$0D,$0D,$0D
-;2cf0
+;2CF0
 .text_enter_password
         EQUS    "Enter password:",$0D
-;2d00
+;2D00
 .text_congrats_enter_name
         EQUS    "Congratulations. ",$83,"Enter your name",$0D
-;2d22
+;2D22
 .text_last_score
         EQUS    "Last Score : ",$0D
 
@@ -9965,8 +10832,13 @@ INCLUDE "repton-has-been-finished.asm"
 
 ;2DF4
 .fn_write_password_to_screen
-        ; TODO is it writing password? Or is it checking map?
+        ; Write the current level's password to the screen
+        ; String to print is held in 
+        ; zp_string_read_address_lsb/msb ($0A $0B)
         JSR     fn_write_string_to_screen
+
+        ; Check to see if the map key 'm' has been
+        ; pressed
         JMP     fn_check_for_map_key_press
 
         ; Spare bytes - 6
@@ -10140,7 +11012,6 @@ INCLUDE "repton-has-been-finished.asm"
         ; Set A to the length of the entered password
         LDA     zp_password_character_count
         RTS
-;...
 
 ;2E73
 .fn_write_sound_music_password_to_screen
@@ -10159,11 +11030,11 @@ INCLUDE "repton-has-been-finished.asm"
         ; stored at $2E94
         ; Set the LSB to the string        
         LDA     #LO(text_music)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the MSB to the string   
         LDA     #HI(text_music)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
         ; Write the string
         JSR     fn_write_string_to_screen
 
@@ -10180,11 +11051,11 @@ INCLUDE "repton-has-been-finished.asm"
 
         ; Set the LSB to the string   
         LDA     #LO(text_password)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Set the MSB to the string   
         LDA     #HI(text_password)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Write the string and return
         JMP     fn_write_string_to_screen
@@ -10210,9 +11081,9 @@ INCLUDE "repton-has-been-finished.asm"
         ; Set the string to display to be 
         ; "Off" for the music status
         LDA     #HI(text_off)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
         LDA     #LO(text_off)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 
         ; Check the music status - if it's
         ; on then change the string to "On "
@@ -10222,7 +11093,7 @@ INCLUDE "repton-has-been-finished.asm"
         ; Change the LSB to point at the "On "
         ; string
         LDA     #LO(text_on)
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
 ;2EC8
 .write_music_status
         JSR     fn_write_string_to_screen
@@ -10235,9 +11106,9 @@ INCLUDE "repton-has-been-finished.asm"
         ; same MSB
         LDX     var_screen_number
         LDA     data_password_lsb_lookup_table,X
-        STA     zp_object_or_string_address_lsb
+        STA     zp_string_read_address_lsb
         LDA     #HI(text_password_screen_a)
-        STA     zp_object_or_string_address_msb
+        STA     zp_string_read_address_msb
 
         ; Set the cursor position to (19,26)
         ; to position it at after "Password : "        
@@ -10268,6 +11139,7 @@ INCLUDE "repton-has-been-finished.asm"
 ; Tiles that make up the repton logo on the start screen
 INCLUDE "repton-logo.asm"
 ;2FC0
+; Repton, monster, egg, explosion and rock sprites
 INCLUDE "repton-sprites.asm"
 ;4000 - 41FF
 ; Map sprite tile offsets
