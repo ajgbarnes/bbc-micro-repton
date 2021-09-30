@@ -44,8 +44,8 @@ org &0A00
 ;   works by luck only - see fn_kill_monster
 ; - After Repton dies, and the explosions have animated there is a
 ;   half second wait and it then tries to play a sound but the first two parameters
-;   aren't set properly so no sound every comes out i.e. 
-;   SOUND &E0, 31, 4,2 - see fn_kill_repton This could have beena late development
+;   aren't set properly so no sound ever comes out i.e. 
+;   SOUND &E0, 31, 4,2 - see fn_kill_repton This could have been a late development
 ;   change to stop the sound?
 ; - Music will not play if Sound is off - music only plays if both sound and music are on
 ;   (why not independent?)
