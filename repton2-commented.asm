@@ -1274,9 +1274,12 @@ INCLUDE "repton-main-music.asm"
 
 ;0D76
 .fn_reset_palette_music_and_vsync
-        ; Reset 
+        ; Dissolve the screen
         JSR     fn_dissolve_screen
 
+        ; Reset the in-game music sequence number
+        ; to start at the beginning when a new game
+        ; starts
         LDA     #$FF
         STA     var_note_sequence_number
         RTS
