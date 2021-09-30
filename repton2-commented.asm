@@ -8366,11 +8366,11 @@ INCLUDE "repton-main-music.asm"
 .fn_reset_and_show_start_screen
         ; This is called when a player loses
         ; a life but still has some left AND
-        ; it is called onve a level has been
+        ; it is called once a level has been
         ; completed
         ;
         ; It is NOT called when a player
-        ; this return to return to status
+        ; just returns to the status
         ; screen (lives, diamonds left etc)
 
         ; Set repton's animation state to 'Repton Standing'
@@ -8378,7 +8378,7 @@ INCLUDE "repton-main-music.asm"
         STA     var_repton_animation_state
 
         ; Reset the main loop counter and the
-        ; retpon idle counter
+        ; repton idle counter
         LDA     #$00
         STA     var_main_loop_counter
         STA     var_repton_idle_counter
