@@ -1,22 +1,16 @@
-# Repton - Work in progress
+# Repton 
 
 This is a disassembly of the **Superior Software** game **Repton**.  Originally written by **Tim Tyler** in 1985.
 
-Always been fascinated by this game and wanted to get inside its author's head hence...
+This is an absolutely iconic game for the BBC Micro and Electron.  And I have always been fascinated by this game and wanted to get inside its author's head who was 15 or 16 at the time he wrote it, hence... here we are.
 
 You can play the game in your browser here at [bbcmicro.co.uk](http://www.bbcmicro.co.uk/game.php?id=266)
 
 I do not hold the copyright to the original game, only the disassembly labelling and comments.
 
-Status
-- The commenting isn't quite finished yet by some margin.
-- All of REPTON1 is commented and will assemble byte identical
-- Script written to take extracted REPTON2 and EOR with $FF to decode
-- REPTON2 mostly commented - need to walk through again (slowly)
-- REPTON2 compiles to be byte identical to the original (before EOR with $FF)
-- REPTON2 converts to be byte identical to the original (after EOR with $FF)
+Feedback and comments are always appreciated to help preserve and understand the internals of this classic.
 
-At the moment, REPTON1 and REPTON2 have to be manually added to the template image (repton.ssd)
+Maps are documented in the spreadsheet [repton-maps.xlsx](https://github.com/ajgbarnes/bbc-micro-repton/blob/main/repton-maps.xlsx)
 
 # Disassembly
 
@@ -26,7 +20,7 @@ I also used [HxD for Window](https://mh-nexus.de/en/hxd/) for inspecting the ori
 
 And all editing was completed in [Visual Studio Code](https://code.visualstudio.com/) and [Simon M's](https://github.com/simondotm) excellent BBC Specific 6502 extension [Beeb VSC](https://marketplace.visualstudio.com/items?itemName=simondotm.beeb-vsc)
 
-# Building
+# Building - Byte Identical
 
 I use the rather excellent [BeebAsm](https://github.com/stardot/beebasm) by *Richard Talbot-Watkins* and I compiled this on WIndows 10.
 
@@ -35,7 +29,7 @@ I use the rather excellent [BeebAsm](https://github.com/stardot/beebasm) by *Ric
 2. Run the following commands 
 
 ```
-beebasm -i repton1-commented.asm
+beebasm -i repton1-commented.asm -di repton.ssd -do repton1.ssd
 ```
 
 This generates REPTON1 - contains relocation routines and the main loading graphic
@@ -44,28 +38,77 @@ This generates REPTON1 - contains relocation routines and the main loading graph
 beebasm -i repton2-commented.asm
 ```
 
-This generates REPTON2a - the main game file before EOR with $FF
+This generates a new REPTON2 - the main game file before EOR with $FF
 
 ```
 python dirty_repton2.py
 ```
 
-This generates REPTON2 - the main game flie EOR'd with $FF
+This replaces the REPTON2 file - the main game flie EOR'd with $FF
 
-For now, manually add REPTON1 and REPTON2 to the repton.ssd file
+For now, manually add REPTON2 to the repton1.ssd file using e.g. BBC Explorer.
 
+Note that when it compiles using this approach the binary files are *byte identical* to the original.
 
-3. I will eventually run it then using [beebjit](https://github.com/scarybeasts/beebjit) created by *Chris Evans(scarybeasts)* using:
+# Building - Easier (And Without Obfuscation)
 
-```beebjit -0 repton.ssd```
+I use the rather excellent [BeebAsm](https://github.com/stardot/beebasm) by *Richard Talbot-Watkins* and I compiled this on WIndows 10.
+
+1. Again download the [beebasm.exe](https://github.com/stardot/beebasm/blob/master/beebasm.exe) into the same directory as your clone of this repository
+
+2. Edit [repton1-commented.asm](https://github.com/ajgbarnes/bbc-micro-repton/blob/d7cc30dd3212cf7c3850141568c2a700d89745a7/repton1-commented.asm#L806) and change the line of code from ```EOR $FF``` to ```EOR $00```. This removes the de-obfuscation.
+
+2. Run the following commands 
+
+```
+beebasm -i repton1-commented.asm -di repton.ssd -do reptona.ssd
+```
+
+This generates REPTON1 - contains relocation routines and the main loading graphic
+
+```
+beebasm -i repton2-commented.asm -di reptona.ssd -do repton1.ssd
+```
+
+This generates a new REPTON2 - the main game file which has not be obfuscated, and puts it into the same SSD image
+
+# Running the Game
+
+3. Run the file using [beebjit](https://github.com/scarybeasts/beebjit) created by *Chris Evans(scarybeasts)* using:
+
+```beebjit -0 repton1.ssd```
 
 4. Shift+Break (F12) to run the compiled game
 
-Note that when it compiles the binary is *byte identical* to the original.
+# Devilishly Infuriating Music Only
+
+To help me understand the in-game music code, I separated it out into [repton-music.asm](https://github.com/ajgbarnes/bbc-micro-repton/blob/main/repton-music.asm). 
+
+To build and run this:
+
+1. Using beebasm:
+
+```beebasm -i repton-music.asm -di MUSIC.SSD -do MUSIC1.SSD```
+
+2. Load the disc into an emulator using [beebjit](https://github.com/scarybeasts/beebjit) using:
+
+```beebjit -0 MUSIC1.ssd```
+
+3. Play the music using:
+
+```*MUSIC```
+
+4. Enjoy...
 
 Hope you can learn something from this disassembly and it inspires a project.  
 
+![alt text](https://github.com/ajgbarnes/bbc-micro-repton/blob/main/repton-loading-screen.png) "Repton Loading Screen"
+
 ![alt text](https://github.com/ajgbarnes/bbc-micro-repton/blob/main/repton-sprites.png "Repton Sprites")
 
+![alt text](https://github.com/ajgbarnes/bbc-micro-repton/blob/main/other-sprites.png) "Other Sprites"
+
+![alt text](https://github.com/ajgbarnes/bbc-micro-repton/blob/main/repton-has-been-finished.png) "Repton has been finished"
 
 Andy Barnes
+Twitter: @ajgbarnes
