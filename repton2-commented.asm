@@ -286,8 +286,7 @@ org &0A00
 ; 0356  0356    1       OS Workspace    Size of screen memory - set in REPTON1
 ;
 ; 0400  07FF    1024    Data            Decompressed current level map
-; 0800  08FF    256     Data
-; 0900  09FF    256     Data
+;
 ; 0900  0900    1       Data            Screen / level number
 ; 0901  0901    1       Data            Lives left
 ; 0902  0902    1       Data            Random number
