@@ -1,5 +1,8 @@
-fr = open('repton2','rb')
-fw = open('repton2_clean','wb')
+import os
+os.remove('REPTON2_CLEAN')
+
+fr = open('REPTON2','rb')
+fw = open('REPTON2_CLEAN','wb')
 byte = fr.read(1)
 
 while byte:

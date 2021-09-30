@@ -114,6 +114,7 @@ org &0A00
 ; - Visible screen memory is therefore $6000 - $7FFF (normally starts at $5800)
 ; - No offscreen buffering
 ; - During game, only the edges are updated as the new column scrolls into view
+; - Only 32 different types of objects
 ;
 ; Colours
 ; -------
@@ -124,6 +125,7 @@ org &0A00
 ;
 ; Repton
 ; ------
+; - Always starts a new level in the same position
 ; - When moving up/down or left/right the animation state is held in
 ;   var_repton_animation_state ($0905) including the explosion sequence at death
 ; - var_repton_idle_counter ($0906) is used to track game loops since last key press
@@ -2027,6 +2029,7 @@ INCLUDE "repton-main-music.asm"
         EOR     SHEILA_USER_VIA_R5_T1C_L
         STA     var_random_value
         ROL     A
+        ADC     var_random_value
         STA     var_random_value
 
         ; Note that $0902 is never read outside
@@ -11157,4 +11160,4 @@ load = $1D00
 relocate_code_block_end = load + (main_code_block_end - main_code_block_start)
 COPYBLOCK main_code_block_start, main_code_block_end, load
 
-SAVE "REPTON2a", load, relocate_code_block_end, $0700
+SAVE "REPTON2", load, relocate_code_block_end, $0700
