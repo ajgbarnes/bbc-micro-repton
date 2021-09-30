@@ -586,9 +586,11 @@ org &0A00
 ; - Change default time to complete a level to 9999
 ;   note the values have to be in BCD so no hex characters allowed
 ;   ?&2016=&99 ?&201B=&99
-
-; var_repton_idle_counter
-; monster pause time
+; - Stop the time decrementing
+;   ?&16F1=&00
+; - Stop the monster moving (alternates between egg and monster)
+;   ?&1599=&EA
+;   ?&159A=&EA
 
 ; Read character (from keyboard) to A
 OSRDCH = $FFE0 
