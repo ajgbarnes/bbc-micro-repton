@@ -637,8 +637,8 @@ zp_logical_physical_colour=$0000
 zp_map_x_cache=$0000
 
 ; ---------------------------------------------
-; These two are paired for reading the Repton
-; sprite and writing to the screen in fn_display_tile
+; These two are paired for reading sprite tiles
+; and writing to the screen in fn_display_tile
 ; and fn_write_tile_to_screen
 
 ; Screen memory location where to write the current map tile
@@ -650,8 +650,8 @@ zp_screen_write_address_msb = $0001
 zp_tile_read_address_lsb = $0002
 zp_tile_read_address_msb = $0003
 ; ---------------------------------------------
-; These two are paired for reading the Repton
-; sprite and writing to the screen in fn_display_sprite
+; These two are paired for reading the sprite tiles
+; and writing to the screen in fn_display_sprite
 
 ; Repton sprite tiles read address (for when he
 ; needs to be written to the screen) and used
