@@ -52,7 +52,7 @@ org &0A00
 ; - $151B should be STY not LDY - doesn't seem to break anything
 ; - Monster information slots start at $0980 (OK) but the piece of code
 ;   that resets the monster cache starts at $0970 and clears up to $09EF
-; - None of the above affets the great game experience thankfully
+; - None of the above affects the great game experience thankfully
 ;
 ; Game Sounds
 ; -----------
@@ -153,7 +153,7 @@ org &0A00
 ; - Start of VSYNC is used in game to set User VIA one shot Timer 2 timer
 ; - VSYNC triggers 50 times a second / every 20 ms
 ; - VSYNC is processed by redirecting EVNTV / EVENTV to fn_enable_timer_2
-; - User VIA Timer 2 is used to trigger next on-game music
+; - User VIA Timer 2 is used to trigger next in-game music
 ; - IRQV2 is used for when User VIA Timer 2 fires - used to play the in-game music
 ;
 ; Timers
@@ -1012,13 +1012,13 @@ var_main_loop_counter=$0907
 var_number_diamonds_left = $0908
 
 ; Player's current score in BCD format
-var_score_lsb  = $909
-var_score_mlsb = $90A
-var_score_msb  = $90B
+var_score_lsb  = $0909
+var_score_mlsb = $090A
+var_score_msb  = $090B
 
 ; Player's remaining level time in BCD format
-var_remaining_time_lsb  = $90C
-var_remaining_time_msb  = $90D
+var_remaining_time_lsb  = $090C
+var_remaining_time_msb  = $090D
 
 ; Player's high score in BCD format
 var_high_score_lsb=$090E
@@ -1046,9 +1046,9 @@ var_score_index = $0920
 ; instead there is a lookup table that is sorted - this 
 ; is used when trying to find the lowest score so far 
 ; when going through the table
-var_lowest_high_score_lsb=$920
-var_lowest_high_score_mlsb=$921
-var_lowest_high_score_msb=$922
+var_lowest_high_score_lsb=$0920
+var_lowest_high_score_mlsb=$0921
+var_lowest_high_score_msb=$0922
 
 ; Bubble sort is used to sort the high score lookup table
 ; This is the iteration counter
